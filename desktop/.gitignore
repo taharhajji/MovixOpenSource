@@ -1,0 +1,8 @@
+node_modules/
+dist/
+resources/movix.user.js
+resources/userscript-meta.json
+npm-install.log
+*.log
+# Le .gitignore racine ignore tout dossier build/ : l icone de l exe doit etre versionnee.
+!build/

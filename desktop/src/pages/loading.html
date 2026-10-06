@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Movix</title>
+  <style>
+    :root { color-scheme: dark; }
+    html, body { height: 100%; margin: 0; background: #000; color: #fff; font-family: "Segoe UI", system-ui, sans-serif; }
+    body { display: flex; align-items: center; justify-content: center; }
+    .box { text-align: center; }
+    .logo { font-size: 44px; font-weight: 900; letter-spacing: 0.08em; }
+    .logo span { color: #e50914; }
+    .spinner { margin: 28px auto 0; width: 36px; height: 36px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.15); border-top-color: #e50914; animation: spin 0.9s linear infinite; }
+    .hint { margin-top: 20px; color: rgba(255,255,255,0.55); font-size: 14px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="logo">MO<span>VIX</span></div>
+    <div class="spinner" aria-hidden="true"></div>
+    <div class="hint">Recherche du meilleur miroir…</div>
+  </div>
+</body>
+</html>

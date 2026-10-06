@@ -1,0 +1,90 @@
+{
+  "name": "movix-desktop",
+  "productName": "Movix",
+  "version": "1.0.0",
+  "description": "Application de bureau Movix (Windows) : charge le site Movix en direct, connectée à l'API et aux serveurs Movix, avec l'extension intégrée.",
+  "author": "Movix",
+  "license": "CC-BY-NC-4.0",
+  "private": true,
+  "main": "src/main.js",
+  "homepage": "https://github.com/movixstream/MovixOpenSource",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/movixstream/MovixOpenSource.git"
+  },
+  "scripts": {
+    "sync:userscript": "node scripts/sync-userscript.mjs",
+    "prestart": "node scripts/sync-userscript.mjs",
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "prebuild": "node scripts/sync-userscript.mjs",
+    "build": "electron-builder --win",
+    "build:dir": "electron-builder --win --dir",
+    "release:manifest": "node scripts/release-manifest.mjs",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "^26.0.0"
+  },
+  "dependencies": {
+    "@ghostery/adblocker": "^2.18.2",
+    "electron-updater": "^6.3.0"
+  },
+  "build": {
+    "appId": "com.movix.desktop",
+    "productName": "Movix",
+    "copyright": "Movix — CC BY-NC 4.0",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "resources/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "asar": true,
+    "compression": "maximum",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Movix",
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "deleteAppDataOnUninstall": false,
+      "language": "1036"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://raw.githubusercontent.com/movixstream/MovixOpenSource/main/desktop/release",
+        "channel": "latest"
+      }
+    ]
+  }
+}

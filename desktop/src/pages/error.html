@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Movix — injoignable</title>
+  <style>
+    :root { color-scheme: dark; }
+    html, body { height: 100%; margin: 0; background: #000; color: #fff; font-family: "Segoe UI", system-ui, sans-serif; }
+    body { display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box; }
+    .card { max-width: 560px; width: 100%; background: #111; border: 1px solid #222; border-radius: 16px; padding: 32px; }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    h1 span { color: #e50914; }
+    p { color: rgba(255,255,255,0.7); line-height: 1.5; margin: 0 0 16px; }
+    code { background: #1c1c1c; padding: 2px 6px; border-radius: 6px; font-size: 13px; }
+    ul { margin: 0 0 20px; padding-left: 20px; color: rgba(255,255,255,0.55); font-size: 13px; max-height: 140px; overflow: auto; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    button { cursor: pointer; border: 0; border-radius: 10px; padding: 11px 18px; font-size: 14px; font-weight: 600; color: #fff; background: #222; }
+    button.primary { background: #e50914; }
+    button:hover { filter: brightness(1.15); }
+    .meta { margin-top: 20px; font-size: 12px; color: rgba(255,255,255,0.4); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>MO<span>VIX</span> est injoignable</h1>
+    <p>Aucun miroir n’a répondu. Vérifiez votre connexion, ou essayez un VPN / le DNS <code>1.1.1.1</code> si votre fournisseur bloque le site.</p>
+    <p id="failure" hidden></p>
+    <ul id="tried"></ul>
+    <div class="actions">
+      <button class="primary" id="retry">Réessayer</button>
+      <button id="telegram">Telegram Movix</button>
+      <button id="github">GitHub</button>
+    </div>
+    <div class="meta" id="meta"></div>
+  </div>
+  <script>
+    (async function () {
+      var bridge = window.__movixDesktop || {};
+      var status = {};
+      try { status = (await bridge.getStatus()) || {}; } catch (e) {}
+
+      var tried = document.getElementById('tried');
+      (status.tried || []).forEach(function (url) {
+        var li = document.createElement('li');
+        li.textContent = url;
+        tried.appendChild(li);
+      });
+      if (status.lastFailure) {
+        var failure = document.getElementById('failure');
+        failure.hidden = false;
+        failure.textContent = 'Dernière erreur : ' + status.lastFailure;
+      }
+      if (status.forcedSiteUrl) {
+        document.getElementById('meta').textContent =
+          'Site imposé par la configuration : ' + status.forcedSiteUrl + ' (Movix › Ouvrir le dossier de configuration pour le modifier).';
+      } else {
+        document.getElementById('meta').textContent = 'Movix Desktop ' + (status.version || '');
+      }
+
+      document.getElementById('retry').addEventListener('click', function () {
+        this.disabled = true;
+        this.textContent = 'Nouvel essai…';
+        if (bridge.retry) bridge.retry();
+      });
+      document.getElementById('telegram').addEventListener('click', function () {
+        if (bridge.openExternal) bridge.openExternal(status.telegramUrl || 'https://t.me/movix_site');
+      });
+      document.getElementById('github').addEventListener('click', function () {
+        if (bridge.openExternal) bridge.openExternal(status.githubUrl || 'https://github.com/movixstream/MovixOpenSource');
+      });
+    })();
+  </script>
+</body>
+</html>

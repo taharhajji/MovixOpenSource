@@ -15,6 +15,19 @@ test('detects Edge before its Chromium token', () => {
   });
 });
 
+test('detects the Windows desktop app before its Chrome token', () => {
+  const info = getSessionDeviceInfo({
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.191 Safari/537.36 MovixDesktop/1.0.0',
+  });
+  assert.deepEqual(info, {
+    version: 1,
+    browser: 'Movix Desktop',
+    browserVersion: '1.0.0',
+    operatingSystem: 'Windows',
+    deviceType: 'desktop',
+  });
+});
+
 test('detects iPadOS desktop-mode Safari as a tablet', () => {
   const info = getSessionDeviceInfo({
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 Version/17.4 Mobile/15E148 Safari/604.1',

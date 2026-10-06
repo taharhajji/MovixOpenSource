@@ -70,6 +70,7 @@ Ce n'est pas un simple duo "frontend + backend". Une feature peut très vite tra
 | `API/proxiesembed/` | Proxy aiohttp pour embeds, flux et DRM | [Proxies Embed](API/proxiesembed/README.md) |
 | `extension/` + `userscript/` | Outils navigateur Movix | [Movix OS](README_MOVIX_OS.md) |
 | `app/` | App mobile React Native (Android OK, iOS non testé) | [App mobile](app/README.md) |
+| `desktop/` | App de bureau Windows (Electron, `.exe`) : site live + extension intégrée | [App de bureau](desktop/README.md) |
 | `wasm/watchparty-sync/` | Moteur Rust/WASM de la Sync Pro | [WatchParty Sync WASM](wasm/watchparty-sync/README.md) |
 | `cloudflareproxy/` | Worker Cloudflare CORS/proxy | [Cloudflare Proxy](cloudflareproxy/README.md) |
 
@@ -86,6 +87,7 @@ movix-main/
 |-- extension/                  # Extension Chrome / Firefox
 |-- userscript/                 # Variante Tampermonkey
 |-- app/                        # App mobile React Native (Android/iOS)
+|-- desktop/                    # App de bureau Windows (Electron)
 |-- wasm/watchparty-sync/       # Sync Pro en Rust/WASM
 |-- cloudflareproxy/            # Worker Cloudflare
 |-- functions/                  # Handlers serverless annexes
@@ -256,6 +258,7 @@ le [guide de déploiement Docker](docs/deployment-docker.md).
 - [Extension navigateur](extension/README.md)
 - [Userscript Tampermonkey](userscript/README.md)
 - [App mobile React Native](app/README.md) — Android fonctionnel, iOS non testé (aide recherchée)
+- [App de bureau Windows](desktop/README.md) — Electron, installeur NSIS + portable, mises à jour via releases GitHub
 - [WatchParty Sync WASM](wasm/watchparty-sync/README.md)
 - [Cloudflare Proxy](cloudflareproxy/README.md)
 

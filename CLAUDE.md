@@ -83,6 +83,7 @@ movix-main/
 ├── wasm/
 │   └── watchparty-sync/    # Rust sync engine -> WebAssembly
 ├── PreMid/                 # Discord Rich Presence (TypeScript)
+├── desktop/                # Windows desktop app (Electron): live site + embedded userscript, see desktop/README.md
 ├── cloudflareproxy/        # Cloudflare Worker CORS relay
 ├── functions/              # Serverless edge handlers
 ├── others/                 # Misc (bad domains, redirections)
