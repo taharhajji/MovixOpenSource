@@ -1,9 +1,9 @@
 {
-  "name": "orbit-desktop",
-  "productName": "Orbit",
+  "name": "mewflix-desktop",
+  "productName": "MEWFLIX",
   "version": "1.0.0",
   "description": "Application de bureau Windows (Electron) : lecteur de streaming connecté aux serveurs du service, extension intégrée, blocage des pubs en phase de test.",
-  "author": "Orbit",
+  "author": "MEWFLIX",
   "license": "CC-BY-NC-4.0",
   "private": true,
   "main": "src/main.js",
@@ -33,8 +33,8 @@
     "electron-updater": "^6.3.0"
   },
   "build": {
-    "appId": "com.orbit.player",
-    "productName": "Orbit",
+    "appId": "com.mewflix.player",
+    "productName": "MEWFLIX",
     "copyright": "CC BY-NC 4.0",
     "directories": {
       "output": "dist",
@@ -72,7 +72,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Orbit",
+      "shortcutName": "MEWFLIX",
       "artifactName": "${productName}-Setup-${version}.${ext}",
       "deleteAppDataOnUninstall": false,
       "language": "1036"

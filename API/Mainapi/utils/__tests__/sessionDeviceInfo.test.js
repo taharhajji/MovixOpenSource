@@ -17,7 +17,7 @@ test('detects Edge before its Chromium token', () => {
 
 test('detects the Windows desktop app before its Chrome token', () => {
   const info = getSessionDeviceInfo({
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.191 Safari/537.36 OrbitDesktop/1.0.0',
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.191 Safari/537.36 MewflixDesktop/1.0.0',
   });
   assert.deepEqual(info, {
     version: 1,

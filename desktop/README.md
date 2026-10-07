@@ -1,6 +1,6 @@
-# Orbit — Application de bureau (Windows)
+# MEWFLIX — Application de bureau (Windows)
 
-Application Windows (`.exe`) construite avec Electron, qui charge le site Movix sous une identité propre (« Orbit »). Même principe que l'[app mobile](../app/README.md) : elle charge le site Movix en direct — donc l'API et les serveurs de production, sans copie du front à maintenir — avec l'extension Movix intégrée (le userscript + un pont `GM_*` natif, sans CORS) et la bascule automatique entre miroirs.
+Application Windows (`.exe`) construite avec Electron, qui charge le site Movix sous une identité propre (« MEWFLIX »). Même principe que l'[app mobile](../app/README.md) : elle charge le site Movix en direct — donc l'API et les serveurs de production, sans copie du front à maintenir — avec l'extension Movix intégrée (le userscript + un pont `GM_*` natif, sans CORS) et la bascule automatique entre miroirs.
 
 ## Ce que fait l'app
 
@@ -14,11 +14,11 @@ Application Windows (`.exe`) construite avec Electron, qui charge le site Movix 
 
 ## Identité de l'app (dissociée du site)
 
-L'interface ne mentionne pas Movix : nom de fenêtre, menus, pages de chargement/erreur, boîtes de dialogue, nom de l'exe et icône sont ceux d'**Orbit**. Le titre de la fenêtre reste « Orbit » quel que soit le `<title>` du site, et les miroirs sont présentés comme « Serveur 1, 2, … », jamais par leur domaine. Dans la page elle-même, la marque du site est masquée : images de logo et intro animée cachées par CSS injecté, texte « MOVIX » du header et du footer remplacé par le nom de l'app (couleur accent), rejoué après chaque re-rendu React. Les autres mentions dans le contenu (textes d'aide, page « C'est quoi… ») restent telles quelles. Pour réafficher la marque du site : `Orbit.exe --site-branding=on`, `MOVIX_SITE_BRANDING=1`, ou `"hideSiteBranding": false` dans `config.json`.
+L'interface ne mentionne pas Movix : nom de fenêtre, menus, pages de chargement/erreur, boîtes de dialogue, nom de l'exe et icône sont ceux d'**MEWFLIX**. Le titre de la fenêtre reste « MEWFLIX » quel que soit le `<title>` du site, et les miroirs sont présentés comme « Serveur 1, 2, … », jamais par leur domaine. Dans la page elle-même, la marque du site est masquée : images de logo et intro animée cachées par CSS injecté, texte « MOVIX » du header et du footer remplacé par le nom de l'app (couleur accent), rejoué après chaque re-rendu React. Les autres mentions dans le contenu (textes d'aide, page « C'est quoi… ») restent telles quelles. Pour réafficher la marque du site : `MEWFLIX.exe --site-branding=on`, `MOVIX_SITE_BRANDING=1`, ou `"hideSiteBranding": false` dans `config.json`.
 
-Tout part de [`src/branding.js`](src/branding.js) (nom, slogan, identifiant, couleurs, jeton User-Agent `OrbitDesktop/<version>`). Pour renommer : modifier ce fichier et les champs `name` / `productName` / `build.appId` / `build.nsis.shortcutName` de `package.json`, puis `npm run icon` pour regénérer `build/icon.png` (dessiné en SVG dans `scripts/render-icon.js`, rendu hors écran par Electron).
+Tout part de [`src/branding.js`](src/branding.js) (nom, slogan, identifiant, couleurs, jeton User-Agent `MewflixDesktop/<version>`). Pour renommer : modifier ce fichier et les champs `name` / `productName` / `build.appId` / `build.nsis.shortcutName` de `package.json`, puis `npm run icon` pour regénérer `build/icon.png` (dessiné en SVG dans `scripts/render-icon.js`, rendu hors écran par Electron).
 
-Les données locales (session, config, cache des filtres) vivent dans `%APPDATA%\Orbit`.
+Les données locales (session, config, cache des filtres) vivent dans `%APPDATA%\MEWFLIX`.
 
 ## Blocage des publicités (phase de test)
 
@@ -37,11 +37,11 @@ Le site lit son statut VIP dans `localStorage` (`is_vip`) et le révoque dès qu
 
 Limite : ce qui est servi **par l'API** uniquement aux vrais codes (en-tête `x-access-key`, par exemple certains flux premium ou le téléchargement) reste soumis à un code valide, qui vit dans la table `access_keys` de la base MySQL (voir `API/Mainapi/checkVip.js`). Pour un vrai VIP, insérer un code en base puis le saisir dans les réglages du site ; l'app n'en a pas besoin pour le reste.
 
-Menu Orbit › « Statut VIP local », `--local-vip=off` ou `MOVIX_LOCAL_VIP=0` pour le couper. **À passer à `false` (`DEFAULTS.localVip`) avant publication.**
+Menu MEWFLIX › « Statut VIP local », `--local-vip=off` ou `MOVIX_LOCAL_VIP=0` pour le couper. **À passer à `false` (`DEFAULTS.localVip`) avant publication.**
 
 ## DNS sécurisé (contournement du filtrage FAI)
 
-Même rôle que le DNS 1.1.1.1 de l'app mobile : la résolution DNS de toute l'app passe en DNS-over-HTTPS (Cloudflare, Google, Quad9 en secours). Les fournisseurs d'accès qui filtrent des hébergeurs vidéo en détournant leur DNS (symptômes : `ERR_CERT_AUTHORITY_INVALID`, `ERR_CONNECTION_RESET` sur Veev, VOE, DoodStream…) sont contournés. Actif par défaut ; menu Orbit › « DNS sécurisé », `--secure-dns=off` ou `MOVIX_SECURE_DNS=0` pour le couper. Un blocage par inspection de paquets (DPI) n'est pas contourné : il faut alors un VPN.
+Même rôle que le DNS 1.1.1.1 de l'app mobile : la résolution DNS de toute l'app passe en DNS-over-HTTPS (Cloudflare, Google, Quad9 en secours). Les fournisseurs d'accès qui filtrent des hébergeurs vidéo en détournant leur DNS (symptômes : `ERR_CERT_AUTHORITY_INVALID`, `ERR_CONNECTION_RESET` sur Veev, VOE, DoodStream…) sont contournés. Actif par défaut ; menu MEWFLIX › « DNS sécurisé », `--secure-dns=off` ou `MOVIX_SECURE_DNS=0` pour le couper. Un blocage par inspection de paquets (DPI) n'est pas contourné : il faut alors un VPN.
 
 ## Diagnostic réseau d'un hébergeur
 
@@ -62,7 +62,7 @@ Après le test de fumée, l'app ouvre la page de lecture, attend qu'un `<video>`
 Pour couper le blocage (par exemple pour tester la monétisation) :
 
 ```bash
-Orbit.exe --adblock=off        # ou MOVIX_ADBLOCK=0, ou le menu Orbit › « Bloquer les publicités »
+MEWFLIX.exe --adblock=off        # ou MOVIX_ADBLOCK=0, ou le menu MEWFLIX › « Bloquer les publicités »
 ```
 
 Le réglage du menu est mémorisé dans `config.json` (`"adBlock": false`). **Avant la publication**, passer la valeur par défaut à `false` dans `src/lib/config.js` (`DEFAULTS.adBlock`) ou retirer la fonctionnalité. Le menu « À propos » affiche le nombre de requêtes et de popups bloqués, avec les hôtes les plus fréquents.
@@ -73,18 +73,18 @@ Trois façons d'imposer l'URL du site (par ordre de priorité) :
 
 ```bash
 # 1. ligne de commande
-Orbit.exe --site=http://localhost:3000
+MEWFLIX.exe --site=http://localhost:3000
 
 # 2. variable d'environnement
 set MOVIX_SITE_URL=https://staging.exemple.tld
 
-# 3. fichier %APPDATA%\Orbit\config.json  (menu Orbit › Ouvrir le dossier de configuration)
+# 3. fichier %APPDATA%\MEWFLIX\config.json  (menu MEWFLIX › Ouvrir le dossier de configuration)
 { "siteUrl": "https://staging.exemple.tld" }
 ```
 
 Le front chargé continue d'utiliser ses propres `VITE_MAIN_API` / `VITE_WATCHPARTY_API` : pour tester une API locale, lancez `npm run dev` à la racine avec un `.env` qui pointe dessus, puis l'app avec `--site=http://localhost:3000`. Le userscript s'injecte aussi sur `localhost`.
 
-Les sessions bureau sont identifiables côté API par le suffixe `OrbitDesktop/<version>` du User-Agent (libellées « Movix Desktop » dans `sessionDeviceInfo.js`).
+Les sessions bureau sont identifiables côté API par le suffixe `MewflixDesktop/<version>` du User-Agent (libellées « Movix Desktop » dans `sessionDeviceInfo.js`).
 
 ## Prérequis
 
@@ -114,8 +114,8 @@ Produit dans `desktop/dist/` :
 
 | Fichier | Rôle |
 | --- | --- |
-| `Orbit-Setup-<version>.exe` | Installeur NSIS (choix du dossier, raccourcis bureau + menu Démarrer, mises à jour auto) |
-| `Orbit-<version>-portable.exe` | Exécutable portable, sans installation |
+| `MEWFLIX-Setup-<version>.exe` | Installeur NSIS (choix du dossier, raccourcis bureau + menu Démarrer, mises à jour auto) |
+| `MEWFLIX-<version>-portable.exe` | Exécutable portable, sans installation |
 | `latest.yml` | Manifeste lu par l'auto-updater |
 
 L'icône de l'exe est générée depuis `build/icon.png` (`npm run icon`).
@@ -151,7 +151,7 @@ desktop/
 │   │   ├── mediaProxyHeaders.js  # Règles d'en-têtes par hébergeur (port de app/src/services/mediaProxyHeaders.ts)
 │   │   ├── addressResolver.js    # rentry → address.json → cache → fallback (port de app/src/services/addressResolver.ts)
 │   │   ├── navigationPolicy.js   # Ce qui reste dans la fenêtre / part dans le navigateur
-│   │   ├── config.js             # %APPDATA%/Orbit/config.json, --site, MOVIX_SITE_URL
+│   │   ├── config.js             # %APPDATA%/MEWFLIX/config.json, --site, MOVIX_SITE_URL
 │   │   └── menu.js               # Menu applicatif (FR)
 │   └── pages/                    # loading.html, error.html
 ├── scripts/sync-userscript.mjs   # Copie le userscript du dépôt dans resources/

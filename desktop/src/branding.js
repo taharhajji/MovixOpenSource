@@ -12,12 +12,12 @@
  */
 
 module.exports = Object.freeze({
-  APP_NAME: 'Orbit',
+  APP_NAME: 'MEWFLIX',
   TAGLINE: 'Lecteur de streaming',
-  APP_ID: 'com.orbit.player',
+  APP_ID: 'com.mewflix.player',
   // Suffixe du User-Agent : identifie les sessions bureau côté API sans
   // mentionner le site. Reconnu par API/Mainapi/utils/sessionDeviceInfo.js.
-  UA_TOKEN: 'OrbitDesktop',
+  UA_TOKEN: 'MewflixDesktop',
   ACCENT: '#6366f1',
   ACCENT_SOFT: '#a5b4fc',
   BACKGROUND: '#07070b',
