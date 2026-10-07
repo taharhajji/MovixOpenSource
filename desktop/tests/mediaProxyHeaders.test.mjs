@@ -3,7 +3,17 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { applyMediaProxyHeaderRules, hostnameOf, isProviderUrl } = require('../src/lib/mediaProxyHeaders.js');
+const { applyMediaProxyHeaderRules, hostnameOf, isProviderUrl, stripSecFetchHeaders } = require('../src/lib/mediaProxyHeaders.js');
+
+test('stripSecFetchHeaders retire les Sec-Fetch-* (Chromium les refuse) et garde le reste', () => {
+  const ruled = applyMediaProxyHeaderRules('https://vidzy.cc/embed-x.html', { Accept: '*/*' });
+  assert.equal(ruled['Sec-Fetch-Mode'], 'cors', 'la règle les émet encore, pour parité avec le mobile');
+  const sent = stripSecFetchHeaders(ruled);
+  assert.equal(Object.keys(sent).some((k) => /^sec-fetch-/i.test(k)), false);
+  assert.equal(sent.Origin, 'https://vidzy.org');
+  assert.equal(sent.Accept, '*/*');
+  assert.equal(sent['Sec-Ch-Ua'], ruled['Sec-Ch-Ua'], 'les indices client restent');
+});
 
 test('hostnameOf lit l’hôte sans port, identifiants ni point final', () => {
   assert.equal(hostnameOf('https://user:pw@Lulustream.com.:443/x?y'), 'lulustream.com');

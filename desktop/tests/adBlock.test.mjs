@@ -34,6 +34,16 @@ test('shouldBlock : désactivé = jamais, site et hôtes protégés = jamais, r�
   assert.equal(blocker.summary().requests, 1);
 });
 
+test('shouldBlock : jamais les flux média, les WebSockets, les hébergeurs vidéo ni les requêtes du principal', () => {
+  const blocker = new AdBlocker({ cacheDir: tmpdir(), isSiteHost, log: { log() {}, warn() {} } });
+  blocker.engine = { match: () => ({ match: true }) };
+  assert.equal(blocker.shouldBlock({ url: 'https://cdn.anything.example/seg.ts', resourceType: 'media' }), false);
+  assert.equal(blocker.shouldBlock({ url: 'wss://anything.example/socket', resourceType: 'webSocket' }), false);
+  assert.equal(blocker.shouldBlock({ url: 'https://vidzy.org/e/abc', resourceType: 'subFrame' }), false, 'hébergeur vidéo connu');
+  assert.equal(blocker.shouldBlock({ url: 'https://ad.doubleclick.net/x', resourceType: 'script', fromMainProcess: true }), false, 'GM_xmlhttpRequest');
+  assert.equal(blocker.shouldBlock({ url: 'https://ad.doubleclick.net/x', resourceType: 'script' }), true);
+});
+
 test('shouldBlock : le moteur de filtres est consulté avec le type Electron et le referrer', () => {
   const blocker = new AdBlocker({ cacheDir: tmpdir(), isSiteHost, log: { log() {}, warn() {} } });
   const seen = [];

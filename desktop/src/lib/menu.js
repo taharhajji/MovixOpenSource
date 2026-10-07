@@ -58,6 +58,12 @@ function buildMenu(actions) {
           checked: actions.adBlockEnabled,
           click: (item) => actions.toggleAdBlock(item.checked),
         },
+        {
+          label: 'DNS sécurisé (contourne le filtrage du fournisseur d’accès)',
+          type: 'checkbox',
+          checked: actions.secureDnsEnabled,
+          click: (item) => actions.toggleSecureDns(item.checked),
+        },
         { type: 'separator' },
         { label: 'Ouvrir le dossier de configuration', click: actions.openConfigFolder },
         { type: 'separator' },

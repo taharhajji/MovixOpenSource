@@ -19,7 +19,40 @@
 
 const path = require('node:path');
 const fs = require('node:fs');
-const { hostnameOf } = require('./mediaProxyHeaders');
+const { hostnameOf, isProviderUrl } = require('./mediaProxyHeaders');
+
+// Types de ressources jamais bloqués : les flux vidéo (segments HLS, MP4) et
+// les WebSockets (WatchParty) ne sont pas des pubs, même si un hébergeur
+// figure dans une liste de filtres pour ses pages.
+const NEVER_BLOCK_TYPES = new Set(['media', 'webSocket', 'websocket', 'mainFrame', 'main_frame']);
+
+// Hébergeurs vidéo que les extracteurs de l'extension interrogent : EasyList
+// en liste plusieurs (ils servent eux-mêmes des pubs), mais depuis l'app ce
+// sont des sources, pas des régies. Suffixes de domaine (sous-domaines inclus).
+const VIDEO_HOST_SUFFIXES = Object.freeze([
+  'vidmoly.me', 'vidmoly.net', 'vidmoly.to', 'vidmoly.biz', 'vidmoly.org',
+  'uqload.is', 'uqload.cx', 'uqload.vc', 'uqload.net', 'uqload.io', 'uqload.co',
+  'voe.sx', 'voe-unblock.com', 'voe-un-block.com',
+  'dood.li', 'dood.to', 'dood.re', 'dood.so', 'dood.wf', 'dood.pm', 'dood.yt', 'doodstream.com', 'dsvplay.com', 'd0o0d.com', 'ds2play.com', 'ds2video.com', 'dooood.com', 'do7go.com',
+  'dropload.io', 'dropload.tv',
+  'streamtape.com', 'streamtape.to', 'streamtape.net', 'streamtape.xyz', 'strtape.cloud', 'tapecontent.net',
+  'mixdrop.co', 'mixdrop.ag', 'mixdrop.to', 'mixdrop.ps', 'mixdrop.sx', 'mxdrop.to',
+  'filemoon.sx', 'filemoon.to', 'filemoon.in', 'filemoon.nl',
+  'vidhide.com', 'vidhidepro.com', 'vidhidevip.com', 'vidhideplus.com',
+  'vidguard.to', 'vgembed.com', 'vembed.net',
+  'sibnet.ru', 'video.sibnet.ru',
+  'streamwish.to', 'streamwish.com', 'swhoi.com', 'awish.pro', 'wishfast.top',
+  'seekstreaming.com', 'cinejoy.app',
+  'vidzy.org', 'vidzy.cc', 'fsvid.lol', 'fs13.lol',
+  'lulustream.com', 'luluvdo.com', 'luluvdoo.com', 'luluvid.com', 'lulu.st', 'tnmr.org',
+  'veev.to', 'veev.pro', 'veevcdn.co', 'poophq.com',
+  'vidara.to', 'vidara.so',
+  'vidsrc.cc', 'vidsrc.su', 'vidsrc.wtf', 'videasy.net',
+]);
+
+function isVideoHost(hostname) {
+  return VIDEO_HOST_SUFFIXES.some((suffix) => hostMatches(hostname, suffix));
+}
 
 const BUILTIN_AD_DOMAINS = Object.freeze([
   // Google / grandes régies
@@ -152,10 +185,17 @@ class AdBlocker {
    */
   shouldBlock(details) {
     if (!this.enabled) return false;
+    // Requêtes du processus principal (GM_xmlhttpRequest de l'extension,
+    // résolution des miroirs, mises à jour) : jamais filtrées, comme les
+    // requêtes Tampermonkey échappent à uBlock.
+    if (details.fromMainProcess) return false;
+    if (NEVER_BLOCK_TYPES.has(String(details.resourceType || ''))) return false;
     const url = String(details.url || '');
     const hostname = hostnameOf(url);
     if (!hostname) return false;
     if (this.isSiteHost(hostname) || isNeverBlockedHost(hostname)) return false;
+    // Hébergeurs vidéo connus de l'extension : des sources, pas des régies.
+    if (isProviderUrl(url) || isVideoHost(hostname)) return false;
 
     let blocked = isBuiltinAdUrl(url);
     if (!blocked && this.engine) {
@@ -206,6 +246,8 @@ module.exports = {
   AdBlocker,
   BUILTIN_AD_DOMAINS,
   NEVER_BLOCK_SUFFIXES,
+  VIDEO_HOST_SUFFIXES,
   isBuiltinAdUrl,
   isNeverBlockedHost,
+  isVideoHost,
 };

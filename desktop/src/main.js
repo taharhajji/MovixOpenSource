@@ -29,7 +29,7 @@ const path = require('node:path');
 const { AppConfig } = require('./lib/config');
 const { resolveAddressConfig } = require('./lib/addressResolver');
 const { gmFetch, abortGmRequest } = require('./lib/gmFetch');
-const { applyMediaProxyHeaderRules, isProviderUrl, hostnameOf } = require('./lib/mediaProxyHeaders');
+const { applyMediaProxyHeaderRules, isProviderUrl, hostnameOf, stripSecFetchHeaders } = require('./lib/mediaProxyHeaders');
 const { classifyExternalUrl, isAllowedInApp, isHttpUrl, isSiteHost } = require('./lib/navigationPolicy');
 const { buildInjectedJavaScript } = require('./injection/bridge-runtime');
 const { buildMenu } = require('./lib/menu');
@@ -406,7 +406,8 @@ function bootstrap() {
     // Unique hook onBeforeRequest de l'app (Electron n'en accepte qu'un par
     // session) : blocage des pubs, toutes couches confondues.
     ses.webRequest.onBeforeRequest(filter, (details, callback) => {
-      if (adBlocker.shouldBlock({ url: details.url, resourceType: details.resourceType, referrer: details.referrer })) {
+      const fromMainProcess = details.webContentsId == null;
+      if (adBlocker.shouldBlock({ url: details.url, resourceType: details.resourceType, referrer: details.referrer, fromMainProcess })) {
         if (IS_DEV) console.log(`[adblock] bloqué ${details.resourceType} ${details.url.slice(0, 120)}`);
         callback({ cancel: true });
         return;
@@ -419,7 +420,12 @@ function bootstrap() {
         callback({ requestHeaders: details.requestHeaders });
         return;
       }
-      callback({ requestHeaders: applyMediaProxyHeaderRules(details.url, details.requestHeaders) });
+      // Les Sec-Fetch-* d'origine (calculés par Chromium) sont conservés tels quels.
+      const ruled = stripSecFetchHeaders(applyMediaProxyHeaderRules(details.url, details.requestHeaders));
+      for (const [name, value] of Object.entries(details.requestHeaders)) {
+        if (/^sec-fetch-/i.test(name)) ruled[name] = value;
+      }
+      callback({ requestHeaders: ruled });
     });
 
     ses.webRequest.onHeadersReceived(filter, (details, callback) => {
@@ -499,6 +505,8 @@ function bootstrap() {
       siteForced: Boolean(config.forcedSiteUrl),
       adBlockEnabled: adBlocker.enabled,
       toggleAdBlock: setAdBlock,
+      secureDnsEnabled: config.secureDnsEnabled,
+      toggleSecureDns: setSecureDns,
       selectMirror: (url) => {
         const index = chain.indexOf(url);
         if (index >= 0) {
@@ -531,6 +539,7 @@ function bootstrap() {
             ? `Blocage des pubs : actif (moteur ${s.engine}) — ${s.requests} requêtes et ${s.popups} popups bloqués${s.top.length ? ` · ${s.top.join(', ')}` : ''}`
             : 'Blocage des pubs : désactivé';
         })(),
+        `DNS sécurisé (DoH) : ${config.secureDnsEnabled ? 'actif' : 'désactivé'}`,
         `Electron ${process.versions.electron} · Chromium ${process.versions.chrome} · Node ${process.versions.node}`,
         '',
         BRAND.LICENSE_LINE,
@@ -684,7 +693,56 @@ function bootstrap() {
     }
     console.log(`[movix:smoke] ${JSON.stringify(result)}`);
     console.log(`[movix:smoke] ${ok ? 'OK' : 'ÉCHEC'}`);
+    if (ok && process.env.MOVIX_SMOKE_PLAY) {
+      const playOk = await runPlaybackTest(wc, process.env.MOVIX_SMOKE_PLAY);
+      setTimeout(() => app.exit(playOk ? 0 : 2), 200);
+      return;
+    }
     setTimeout(() => app.exit(ok ? 0 : 1), 200);
+  }
+
+  // Lecture vidéo réelle : MOVIX_SMOKE_PLAY=/watch/movie/<id>. Attend qu'un
+  // <video> de la page avance (lecture effective), capture desktop/smoke-play.png.
+  async function runPlaybackTest(wc, pathname) {
+    const origin = new URL(wc.getURL()).origin;
+    console.log(`[movix:play] navigation vers ${origin}${pathname}`);
+    await wc.loadURL(`${origin}${pathname}`).catch(() => {});
+    const snippet = `
+      new Promise((resolve) => {
+        const started = Date.now();
+        const seen = { videos: 0, iframes: 0, maxReadyState: 0, maxTime: 0, src: '' };
+        (function poll() {
+          const videos = Array.from(document.querySelectorAll('video'));
+          seen.videos = videos.length;
+          seen.iframes = document.querySelectorAll('iframe').length;
+          for (const v of videos) {
+            seen.maxReadyState = Math.max(seen.maxReadyState, v.readyState);
+            seen.maxTime = Math.max(seen.maxTime, v.currentTime || 0);
+            if (!seen.src && (v.currentSrc || v.src)) seen.src = String(v.currentSrc || v.src).slice(0, 80);
+            if (v.readyState >= 3 && v.currentTime > 1 && !v.paused) {
+              return resolve({ playing: true, elapsedMs: Date.now() - started, ...seen });
+            }
+            if (v.paused && v.readyState >= 2 && v.currentTime < 0.5) { try { v.muted = true; v.play().catch(() => {}); } catch (e) {} }
+          }
+          if (Date.now() - started > 120000) return resolve({ playing: false, elapsedMs: Date.now() - started, ...seen });
+          setTimeout(poll, 500);
+        })();
+      })`;
+    let result;
+    try {
+      result = await wc.executeJavaScript(snippet, true);
+    } catch (err) {
+      result = { playing: false, error: err && err.message };
+    }
+    try {
+      const shot = await wc.capturePage();
+      fs.writeFileSync(path.join(__dirname, '..', 'smoke-play.png'), shot.toPNG());
+    } catch {
+      // capture facultative
+    }
+    console.log(`[movix:play] ${JSON.stringify(result)}`);
+    console.log(`[movix:play] ${result.playing ? 'LECTURE OK' : 'PAS DE LECTURE'}`);
+    return Boolean(result.playing);
   }
 
   // --- Cycle de vie -----------------------------------------------------------
@@ -702,7 +760,37 @@ function bootstrap() {
 
   app.on('window-all-closed', () => app.quit());
 
+  // DNS sécurisé (DNS-over-HTTPS) : même rôle que le DNS 1.1.1.1 de l'app
+  // mobile. Les fournisseurs d'accès filtrent certains hébergeurs vidéo en
+  // détournant leur DNS (réponses ERR_CERT_AUTHORITY_INVALID /
+  // ERR_CONNECTION_RESET) ; la résolution chiffrée via Cloudflare/Google/Quad9
+  // contourne ce détournement pour toute l'app (pages, extension, flux).
+  function applySecureDns() {
+    const enabled = config.secureDnsEnabled;
+    try {
+      app.configureHostResolver(enabled ? {
+        enableBuiltInResolver: true,
+        secureDnsMode: 'secure',
+        secureDnsServers: [
+          'https://cloudflare-dns.com/dns-query',
+          'https://dns.google/dns-query',
+          'https://dns.quad9.net/dns-query',
+        ],
+      } : { secureDnsMode: 'off' });
+      console.log(`[dns] DNS sécurisé ${enabled ? 'actif (DoH Cloudflare/Google/Quad9)' : 'désactivé'}`);
+    } catch (err) {
+      console.warn('[dns] configuration impossible :', err && err.message);
+    }
+  }
+
+  function setSecureDns(enabled) {
+    config.set('secureDns', Boolean(enabled));
+    applySecureDns();
+    refreshMenu();
+  }
+
   app.whenReady().then(async () => {
+    applySecureDns();
     loadInjectionCode();
     installWebRequestHooks(session.defaultSession);
     registerIpc();

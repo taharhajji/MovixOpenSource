@@ -29,7 +29,27 @@ Tant que l'app n'est pas publiée, **toutes les pubs sont bloquées par défaut*
 3. **Popups et redirections sortantes** : `window.open` vers un hôte externe non sûr renvoie une fenêtre factice ; les navigations vers des smartlinks sont ignorées. Telegram, GitHub, Discord, YouTube, TMDB, Wikipédia restent ouvrables dans le navigateur.
 4. **Plus de fenêtre « voir une pub avant de regarder »** : le site possède un mode « auto » pour ce popup (réglage Intermission, clé `settings_ad_popup_mode`). L'app le force avant le chargement de la page : rien n'est affiché, le lien pub est ouvert en arrière-plan (donc neutralisé par la couche 3) et la lecture démarre directement. Le réglage précédent est restauré si le blocage est désactivé. La porte SwiftFlux (catalogue MP4) garde son étape « voir une pub » : un clic, aucune pub ne part, puis Turnstile.
 
-Jamais bloqués : le site et ses miroirs, l'hôte imposé, l'API, TMDB, l'OAuth Discord/Google, Turnstile, les résolveurs de miroirs.
+Jamais bloqués : le site et ses miroirs, l'hôte imposé, l'API, TMDB, l'OAuth Discord/Google, Turnstile, les résolveurs de miroirs, les hébergeurs vidéo connus de l'extension, les flux média et WebSockets, et toutes les requêtes émises par l'extension (`GM_xmlhttpRequest`) — comme Tampermonkey échappe à uBlock.
+
+## DNS sécurisé (contournement du filtrage FAI)
+
+Même rôle que le DNS 1.1.1.1 de l'app mobile : la résolution DNS de toute l'app passe en DNS-over-HTTPS (Cloudflare, Google, Quad9 en secours). Les fournisseurs d'accès qui filtrent des hébergeurs vidéo en détournant leur DNS (symptômes : `ERR_CERT_AUTHORITY_INVALID`, `ERR_CONNECTION_RESET` sur Veev, VOE, DoodStream…) sont contournés. Actif par défaut ; menu Orbit › « DNS sécurisé », `--secure-dns=off` ou `MOVIX_SECURE_DNS=0` pour le couper. Un blocage par inspection de paquets (DPI) n'est pas contourné : il faut alors un VPN.
+
+## Diagnostic réseau d'un hébergeur
+
+```bash
+PROBE_DOH=1 PROBE_URLS="https://vidzy.cc/embed-x.html,https://veev.to/e/y" node node_modules/electron/cli.js scripts/gm-probe.js
+```
+
+Pour chaque URL : `net.request` nu, avec les règles d'en-têtes, puis `gmFetch` (le `GM_xmlhttpRequest` natif de l'app), avec le détail des erreurs de certificat (émetteur, sujet). Un émetteur du type « Fortiguard SDNS Blocked Page » ou « FG… » signale un pare-feu FortiGate (DNS détourné ou inspection SSL) : le DNS sécurisé règle le premier cas, pas le second.
+
+## Test de lecture vidéo
+
+```bash
+MOVIX_SMOKE=1 MOVIX_SMOKE_PLAY=/watch/movie/27205 npx electron .
+```
+
+Après le test de fumée, l'app ouvre la page de lecture, attend qu'un `<video>` avance réellement (jusqu'à 2 min), capture `smoke-play.png` et sort avec 0 si la lecture a démarré. Sous Git Bash, préfixer par `MSYS_NO_PATHCONV=1` pour que le chemin ne soit pas converti.
 
 Pour couper le blocage (par exemple pour tester la monétisation) :
 

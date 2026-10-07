@@ -183,9 +183,24 @@ function applyMediaProxyHeaderRules(url, input) {
   return headers;
 }
 
+/**
+ * Retire les en-têtes `Sec-Fetch-*` : le pont mobile les pose pour un fetch
+ * React Native, mais la pile réseau de Chromium les calcule elle-même et
+ * refuse une valeur fournie (`Sec-Fetch-Mode` → net::ERR_INVALID_ARGUMENT).
+ */
+function stripSecFetchHeaders(headers) {
+  const out = {};
+  for (const [name, value] of Object.entries(headers || {})) {
+    if (/^sec-fetch-/i.test(name)) continue;
+    out[name] = value;
+  }
+  return out;
+}
+
 module.exports = {
   applyMediaProxyHeaderRules,
   hostnameOf,
   isProviderUrl,
+  stripSecFetchHeaders,
   PROVIDER_SIGNED_USER_AGENT,
 };

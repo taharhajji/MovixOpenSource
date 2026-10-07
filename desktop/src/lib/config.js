@@ -27,7 +27,25 @@ const DEFAULTS = Object.freeze({
   // intro animée) et la remplace par le nom de l'app. MOVIX_SITE_BRANDING=1
   // ou --site-branding=on pour la réafficher.
   hideSiteBranding: true,
+  // DNS-over-HTTPS (Cloudflare/Google/Quad9) pour contourner le filtrage DNS
+  // des fournisseurs d'accès, comme le DNS 1.1.1.1 de l'app mobile.
+  // MOVIX_SECURE_DNS=0 ou --secure-dns=off pour le couper.
+  secureDns: true,
 });
+
+function readOnOffOverride(argv, env, flag, envName) {
+  for (const arg of argv) {
+    if (arg.startsWith(`--${flag}=`)) {
+      const parsed = parseOnOff(arg.slice(flag.length + 3));
+      if (parsed !== null) return parsed;
+    }
+  }
+  if (env[envName] != null) {
+    const parsed = parseOnOff(env[envName]);
+    if (parsed !== null) return parsed;
+  }
+  return null;
+}
 
 function parseOnOff(value) {
   const normalized = String(value == null ? '' : value).trim().toLowerCase();
@@ -97,6 +115,13 @@ class AppConfig {
     this.siteOverride = readSiteOverride(argv, env);
     this.adBlockOverride = readAdBlockOverride(argv, env);
     this.siteBrandingOverride = readSiteBrandingOverride(argv, env);
+    this.secureDnsOverride = readOnOffOverride(argv, env, 'secure-dns', 'MOVIX_SECURE_DNS');
+  }
+
+  /** DNS sécurisé effectif (CLI/env > config.json). */
+  get secureDnsEnabled() {
+    if (this.secureDnsOverride !== null) return this.secureDnsOverride;
+    return this.values.secureDns !== false;
   }
 
   /** Masquage de la marque du site effectif (CLI/env > config.json). */

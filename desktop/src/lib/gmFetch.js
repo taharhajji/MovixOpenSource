@@ -11,7 +11,7 @@
  */
 
 const { net } = require('electron');
-const { applyMediaProxyHeaderRules } = require('./mediaProxyHeaders');
+const { applyMediaProxyHeaderRules, stripSecFetchHeaders } = require('./mediaProxyHeaders');
 
 const MAX_REDIRECTS = 5;
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -207,7 +207,8 @@ async function gmFetch(message, session) {
 
     let result = null;
     for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
-      const headers = applyMediaProxyHeaderRules(currentUrl, { ...baseHeaders });
+      // Chromium calcule lui-même les Sec-Fetch-* et refuse qu'on les fournisse.
+      const headers = stripSecFetchHeaders(applyMediaProxyHeaderRules(currentUrl, { ...baseHeaders }));
       const outcome = await singleRequest({
         url: currentUrl,
         method,
