@@ -14,7 +14,7 @@ Application Windows (`.exe`) construite avec Electron, qui charge le site Movix 
 
 ## Identité de l'app (dissociée du site)
 
-L'interface ne mentionne pas Movix : nom de fenêtre, menus, pages de chargement/erreur, boîtes de dialogue, nom de l'exe et icône sont ceux d'**Orbit**. Le titre de la fenêtre reste « Orbit » quel que soit le `<title>` du site, et les miroirs sont présentés comme « Serveur 1, 2, … », jamais par leur domaine. Le contenu de la page web (le site lui-même) n'est pas modifié.
+L'interface ne mentionne pas Movix : nom de fenêtre, menus, pages de chargement/erreur, boîtes de dialogue, nom de l'exe et icône sont ceux d'**Orbit**. Le titre de la fenêtre reste « Orbit » quel que soit le `<title>` du site, et les miroirs sont présentés comme « Serveur 1, 2, … », jamais par leur domaine. Dans la page elle-même, la marque du site est masquée : images de logo et intro animée cachées par CSS injecté, texte « MOVIX » du header et du footer remplacé par le nom de l'app (couleur accent), rejoué après chaque re-rendu React. Les autres mentions dans le contenu (textes d'aide, page « C'est quoi… ») restent telles quelles. Pour réafficher la marque du site : `Orbit.exe --site-branding=on`, `MOVIX_SITE_BRANDING=1`, ou `"hideSiteBranding": false` dans `config.json`.
 
 Tout part de [`src/branding.js`](src/branding.js) (nom, slogan, identifiant, couleurs, jeton User-Agent `OrbitDesktop/<version>`). Pour renommer : modifier ce fichier et les champs `name` / `productName` / `build.appId` / `build.nsis.shortcutName` de `package.json`, puis `npm run icon` pour regénérer `build/icon.png` (dessiné en SVG dans `scripts/render-icon.js`, rendu hors écran par Electron).
 

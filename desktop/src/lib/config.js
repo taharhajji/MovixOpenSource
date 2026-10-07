@@ -23,12 +23,31 @@ const DEFAULTS = Object.freeze({
   // Phase de test avant publication : blocage total des pubs activé par défaut.
   // Surchargeable par `--adblock=off` ou MOVIX_ADBLOCK=0.
   adBlock: true,
+  // Masque la marque du site dans la page (logo du header/footer, images,
+  // intro animée) et la remplace par le nom de l'app. MOVIX_SITE_BRANDING=1
+  // ou --site-branding=on pour la réafficher.
+  hideSiteBranding: true,
 });
 
 function parseOnOff(value) {
   const normalized = String(value == null ? '' : value).trim().toLowerCase();
   if (['1', 'on', 'true', 'yes', 'oui'].includes(normalized)) return true;
   if (['0', 'off', 'false', 'no', 'non'].includes(normalized)) return false;
+  return null;
+}
+
+/** `--site-branding=on|off` / MOVIX_SITE_BRANDING : true = marque du site visible. */
+function readSiteBrandingOverride(argv, env) {
+  for (const arg of argv) {
+    if (arg.startsWith('--site-branding=')) {
+      const parsed = parseOnOff(arg.slice('--site-branding='.length));
+      if (parsed !== null) return parsed;
+    }
+  }
+  if (env.MOVIX_SITE_BRANDING != null) {
+    const parsed = parseOnOff(env.MOVIX_SITE_BRANDING);
+    if (parsed !== null) return parsed;
+  }
   return null;
 }
 
@@ -77,6 +96,13 @@ class AppConfig {
     this.values.siteUrl = normalizeSiteUrl(this.values.siteUrl);
     this.siteOverride = readSiteOverride(argv, env);
     this.adBlockOverride = readAdBlockOverride(argv, env);
+    this.siteBrandingOverride = readSiteBrandingOverride(argv, env);
+  }
+
+  /** Masquage de la marque du site effectif (CLI/env > config.json). */
+  get hideSiteBranding() {
+    if (this.siteBrandingOverride !== null) return !this.siteBrandingOverride;
+    return this.values.hideSiteBranding !== false;
   }
 
   /** Blocage des pubs effectif (CLI/env > config.json). */
@@ -119,4 +145,11 @@ class AppConfig {
   }
 }
 
-module.exports = { AppConfig, DEFAULTS, normalizeSiteUrl, readAdBlockOverride, readSiteOverride };
+module.exports = {
+  AppConfig,
+  DEFAULTS,
+  normalizeSiteUrl,
+  readAdBlockOverride,
+  readSiteBrandingOverride,
+  readSiteOverride,
+};

@@ -6,3 +6,4 @@ npm-install.log
 *.log
 # Le .gitignore racine ignore tout dossier build/ : l icone de l exe doit etre versionnee.
 !build/
+smoke.png

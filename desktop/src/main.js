@@ -49,7 +49,13 @@ const PAGES_DIR = path.join(__dirname, 'pages');
 // Démarrage : instance unique, identité Windows, commutateurs Chromium
 // ---------------------------------------------------------------------------
 
+// Profil séparé (tests, second compte) : MOVIX_USER_DATA=<dossier>.
+if (process.env.MOVIX_USER_DATA) {
+  app.setPath('userData', path.resolve(process.env.MOVIX_USER_DATA));
+}
+
 if (!app.requestSingleInstanceLock()) {
+  console.log(`[movix] ${BRAND.APP_NAME} est déjà ouvert : cette instance se ferme et met l'autre au premier plan.`);
   app.quit();
 } else {
   bootstrap();
@@ -125,7 +131,14 @@ function bootstrap() {
   function loadInjectionCode() {
     try {
       const userscriptSource = fs.readFileSync(USERSCRIPT_PATH, 'utf8');
-      injectionCode = buildInjectedJavaScript({ version: app.getVersion(), userscriptSource, appName: APP_NAME });
+      injectionCode = buildInjectedJavaScript({
+        version: app.getVersion(),
+        userscriptSource,
+        appName: APP_NAME,
+        accent: BRAND.ACCENT,
+        hideSiteBranding: config.hideSiteBranding,
+      });
+      console.log(`[movix] marque du site ${config.hideSiteBranding ? 'masquée' : 'visible'} dans la page`);
       console.log(`[movix] userscript chargé (${(userscriptSource.length / 1024).toFixed(0)} Ko)`);
     } catch (err) {
       injectionCode = '';
@@ -624,7 +637,18 @@ function bootstrap() {
           const popup = window.open('https://smartlink.example-ads.test/go?x=1', '_blank');
           out.adPopup = popup && typeof popup.close === 'function' ? 'neutralisé' : 'ouvert';
         } catch (e) { out.adPopup = 'erreur'; }
-        const finish = (extra) => adProbe.then((adResult) => resolve({ ...out, adProbe: adResult, ...extra }));
+        // Marque du site : attend le header React, puis lit le texte du lien logo.
+        const brandProbe = new Promise((done) => {
+          const started = Date.now();
+          (function poll() {
+            const link = document.querySelector('header a[href="/"]');
+            if (link && link.textContent.trim()) return done(link.textContent.trim());
+            if (Date.now() - started > 12000) return done(null);
+            setTimeout(poll, 200);
+          })();
+        });
+        const finish = (extra) => Promise.all([adProbe, brandProbe])
+          .then(([adResult, brandResult]) => resolve({ ...out, adProbe: adResult, headerBrand: brandResult, ...extra }));
         const timer = setTimeout(() => finish({ probe: 'timeout' }), 15000);
         GM_xmlhttpRequest({
           method: 'GET',
@@ -647,8 +671,17 @@ function bootstrap() {
     const adOk = !adBlocker.enabled
       || (result && result.adProbe === 'bloqué' && result.adPopup === 'neutralisé' && result.adPopupMode === 'auto');
     const titleOk = result && result.windowTitle === APP_NAME;
+    const brandOk = !config.hideSiteBranding
+      || (result && typeof result.headerBrand === 'string' && !/movix/i.test(result.headerBrand));
     const ok = result && result.bridge && result.gm === 'function' && result.userscript
-      && result.probe && result.probe.status === 200 && adOk && titleOk;
+      && result.probe && result.probe.status === 200 && adOk && titleOk && brandOk;
+    // Capture de la fenêtre pour vérification visuelle (desktop/smoke.png).
+    try {
+      const shot = await wc.capturePage();
+      fs.writeFileSync(path.join(__dirname, '..', 'smoke.png'), shot.toPNG());
+    } catch (err) {
+      console.warn('[movix:smoke] capture impossible :', err && err.message);
+    }
     console.log(`[movix:smoke] ${JSON.stringify(result)}`);
     console.log(`[movix:smoke] ${ok ? 'OK' : 'ÉCHEC'}`);
     setTimeout(() => app.exit(ok ? 0 : 1), 200);

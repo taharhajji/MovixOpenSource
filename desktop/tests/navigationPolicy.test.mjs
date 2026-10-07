@@ -7,7 +7,22 @@ import { join } from 'node:path';
 
 const require = createRequire(import.meta.url);
 const { isAllowedInApp, isMovixHost, isSiteHost } = require('../src/lib/navigationPolicy.js');
-const { AppConfig, readSiteOverride, normalizeSiteUrl } = require('../src/lib/config.js');
+const { AppConfig, readSiteOverride, normalizeSiteUrl, readSiteBrandingOverride } = require('../src/lib/config.js');
+
+test('marque du site masquée par défaut, réaffichable par --site-branding=on ou MOVIX_SITE_BRANDING=1', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'movix-brand-'));
+  try {
+    assert.equal(new AppConfig(dir).hideSiteBranding, true);
+    assert.equal(new AppConfig(dir, { argv: ['--site-branding=on'] }).hideSiteBranding, false);
+    assert.equal(new AppConfig(dir, { env: { MOVIX_SITE_BRANDING: '1' } }).hideSiteBranding, false);
+    assert.equal(new AppConfig(dir, { env: { MOVIX_SITE_BRANDING: 'off' } }).hideSiteBranding, true);
+    new AppConfig(dir).set('hideSiteBranding', false);
+    assert.equal(new AppConfig(dir).hideSiteBranding, false);
+    assert.equal(readSiteBrandingOverride([], {}), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('domaines Movix et hôtes locaux', () => {
   assert.equal(isMovixHost('movix.luxe'), true);

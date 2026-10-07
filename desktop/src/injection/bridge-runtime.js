@@ -12,7 +12,7 @@
  * en-têtes des hébergeurs sont posés par session.webRequest côté principal.
  */
 
-function buildBridgeRuntime({ version, appName = 'Orbit' }) {
+function buildBridgeRuntime({ version, appName = 'Orbit', accent = '#6366f1', hideSiteBranding = false }) {
   return `
 (function() {
   'use strict';
@@ -21,6 +21,70 @@ function buildBridgeRuntime({ version, appName = 'Orbit' }) {
   if (!native || typeof native.gmFetch !== 'function') return;
   window.__MOVIX_DESKTOP_BRIDGE_READY = true;
   var APP_NAME = ${JSON.stringify(appName)};
+  var ACCENT = ${JSON.stringify(accent)};
+
+  // --- Marque du site masquée dans la page ---------------------------------------
+  // Le site n'a pas d'option pour ça : on cache ses images de logo et son intro
+  // animée par CSS, et on remplace le texte « MOVIX » du header/footer par le
+  // nom de l'app. Un observateur rejoue le remplacement après chaque re-rendu
+  // React, en ne parcourant que header/footer (coût négligeable).
+  if (${hideSiteBranding ? 'true' : 'false'}) (function hideSiteBranding() {
+    var CSS = 'img[src*="/movix"], img[alt*="movix" i], .bb-logo { display: none !important; }';
+    var BRAND_RE = /^(\\s*)movix(\\s*)$/i;
+    var scheduled = false;
+
+    function addStyle() {
+      if (document.getElementById('orbit-site-branding')) return true;
+      var parent = document.head || document.documentElement;
+      if (!parent) return false;
+      var style = document.createElement('style');
+      style.id = 'orbit-site-branding';
+      style.textContent = CSS;
+      parent.appendChild(style);
+      return true;
+    }
+
+    function scrubTextNodes(root) {
+      var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      var node;
+      while ((node = walker.nextNode())) {
+        var match = BRAND_RE.exec(node.nodeValue || '');
+        if (!match) continue;
+        var original = node.nodeValue.trim();
+        var replacement = original === original.toUpperCase() ? APP_NAME.toUpperCase() : APP_NAME;
+        node.nodeValue = match[1] + replacement + match[2];
+        var el = node.parentElement;
+        if (el && /text-red/.test(el.className || '')) el.style.color = ACCENT;
+      }
+    }
+
+    function scrub() {
+      scheduled = false;
+      addStyle();
+      var roots = document.querySelectorAll('header, footer');
+      for (var i = 0; i < roots.length; i++) scrubTextNodes(roots[i]);
+    }
+
+    function schedule() {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(scrub);
+    }
+
+    if (!addStyle()) {
+      new MutationObserver(function(_m, observer) {
+        if (addStyle()) observer.disconnect();
+      }).observe(document, { childList: true });
+    }
+    var start = function() {
+      scrub();
+      new MutationObserver(schedule).observe(document.documentElement, {
+        childList: true, subtree: true, characterData: true
+      });
+    };
+    if (document.documentElement) start();
+    else document.addEventListener('DOMContentLoaded', start, { once: true });
+  })();
 
   // --- Popup « voir une pub avant de regarder » ---------------------------------
   // Le site propose un mode « auto » pour ce popup (réglage Intermission) : rien
@@ -290,8 +354,8 @@ function buildBridgeRuntime({ version, appName = 'Orbit' }) {
 /**
  * Assemble le script complet : pont GM puis userscript.
  */
-function buildInjectedJavaScript({ version, userscriptSource, appName }) {
-  return `${buildBridgeRuntime({ version, appName })}
+function buildInjectedJavaScript({ version, userscriptSource, appName, accent, hideSiteBranding }) {
+  return `${buildBridgeRuntime({ version, appName, accent, hideSiteBranding })}
 
 // --- Userscript Movix ---
 (function() {
