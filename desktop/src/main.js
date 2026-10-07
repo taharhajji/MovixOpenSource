@@ -34,8 +34,10 @@ const { classifyExternalUrl, isAllowedInApp, isHttpUrl, isSiteHost } = require('
 const { buildInjectedJavaScript } = require('./injection/bridge-runtime');
 const { buildMenu } = require('./lib/menu');
 const { AdBlocker } = require('./lib/adBlock');
+const BRAND = require('./branding');
 
-const APP_ID = 'com.movix.desktop';
+const APP_ID = BRAND.APP_ID;
+const APP_NAME = BRAND.APP_NAME;
 const IS_DEV = !app.isPackaged || process.argv.includes('--dev');
 const MIRROR_DOWN_STATUSES = new Set([500, 502, 504, 520, 521, 522, 523, 524, 525, 526, 530]);
 const ADDRESS_CACHE_FILE = 'address-cache.json';
@@ -65,7 +67,7 @@ function bootstrap() {
   // l'API Movix d'identifier les sessions bureau.
   app.userAgentFallback =
     `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) `
-    + `Chrome/${process.versions.chrome} Safari/537.36 MovixDesktop/${app.getVersion()}`;
+    + `Chrome/${process.versions.chrome} Safari/537.36 ${BRAND.UA_TOKEN}/${app.getVersion()}`;
 
   /** @type {BrowserWindow | null} */
   let mainWindow = null;
@@ -123,7 +125,7 @@ function bootstrap() {
   function loadInjectionCode() {
     try {
       const userscriptSource = fs.readFileSync(USERSCRIPT_PATH, 'utf8');
-      injectionCode = buildInjectedJavaScript({ version: app.getVersion(), userscriptSource });
+      injectionCode = buildInjectedJavaScript({ version: app.getVersion(), userscriptSource, appName: APP_NAME });
       console.log(`[movix] userscript chargé (${(userscriptSource.length / 1024).toFixed(0)} Ko)`);
     } catch (err) {
       injectionCode = '';
@@ -203,16 +205,21 @@ function bootstrap() {
     }
   }
 
+  function loadLocalPage(file) {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.loadFile(path.join(PAGES_DIR, file), { query: { name: APP_NAME } }).catch(() => {});
+  }
+
   function showErrorPage() {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     currentMirrorUrl = '';
     refreshMenu();
-    mainWindow.loadFile(path.join(PAGES_DIR, 'error.html')).catch(() => {});
+    loadLocalPage('error.html');
   }
 
   async function restartFromScratch() {
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    mainWindow.loadFile(path.join(PAGES_DIR, 'loading.html')).catch(() => {});
+    loadLocalPage('loading.html');
     await resolveAddress();
     loadMirror(0);
   }
@@ -232,8 +239,8 @@ function bootstrap() {
       height: 800,
       minWidth: 900,
       minHeight: 560,
-      backgroundColor: '#000000',
-      title: 'Movix',
+      backgroundColor: BRAND.BACKGROUND,
+      title: APP_NAME,
       icon,
       autoHideMenuBar: true,
       show: false,
@@ -281,6 +288,12 @@ function bootstrap() {
 
     const wc = mainWindow.webContents;
     wc.on('zoom-changed', () => config.set('zoomFactor', wc.getZoomFactor()));
+
+    // La fenêtre garde le nom de l'app : jamais le <title> du site.
+    mainWindow.on('page-title-updated', (event) => {
+      event.preventDefault();
+      if (mainWindow.getTitle() !== APP_NAME) mainWindow.setTitle(APP_NAME);
+    });
 
     wc.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
       if (!isMainFrame || errorCode === -3) return; // -3 : navigation annulée (normal)
@@ -460,8 +473,10 @@ function bootstrap() {
 
   function refreshMenu() {
     if (!address) return;
-    const mirrors = chain.map((url) => ({ url, label: url.replace(/^https?:\/\//, '') }));
+    // Les serveurs sont numérotés, jamais nommés par leur domaine.
+    const mirrors = chain.map((url, index) => ({ url, label: `Serveur ${index + 1}` }));
     const menu = buildMenu({
+      appName: APP_NAME,
       reload: () => mainWindow && mainWindow.webContents.reload(),
       home: () => loadMirror(chainIndex >= 0 && chainIndex < chain.length ? chainIndex : 0),
       back: () => mainWindow && mainWindow.webContents.navigationHistory.goBack(),
@@ -490,13 +505,13 @@ function bootstrap() {
   }
 
   function showAbout() {
+    const serverIndex = chain.indexOf(currentMirrorUrl);
     dialog.showMessageBox(mainWindow, {
       type: 'info',
-      title: 'À propos de Movix',
-      message: `Movix Desktop ${app.getVersion()}`,
+      title: `À propos de ${APP_NAME}`,
+      message: `${APP_NAME} ${app.getVersion()} — ${BRAND.TAGLINE}`,
       detail: [
-        `Site : ${currentMirrorUrl || '(aucun)'}${config.forcedSiteUrl ? ' (imposé)' : ''}`,
-        `Miroirs connus : ${chain.length} (source : ${address ? address.source : '?'})`,
+        `Serveur : ${serverIndex >= 0 ? `n°${serverIndex + 1}` : '(aucun)'}${config.forcedSiteUrl ? ' (imposé par la configuration)' : ''} · ${chain.length} connus`,
         (() => {
           const s = adBlocker.summary();
           return s.enabled
@@ -505,7 +520,7 @@ function bootstrap() {
         })(),
         `Electron ${process.versions.electron} · Chromium ${process.versions.chrome} · Node ${process.versions.node}`,
         '',
-        'Licence CC BY-NC 4.0 — github.com/movixstream/MovixOpenSource',
+        BRAND.LICENSE_LINE,
       ].join('\n'),
       buttons: ['Fermer'],
     }).catch(() => {});
@@ -530,7 +545,7 @@ function bootstrap() {
       dialog.showMessageBox(mainWindow, {
         type: 'question',
         title: 'Mise à jour prête',
-        message: `Movix ${info.version} est téléchargé.`,
+        message: `${APP_NAME} ${info.version} est téléchargé.`,
         detail: 'Redémarrer maintenant pour l’installer ? Sinon elle s’installera à la fermeture.',
         buttons: ['Redémarrer', 'Plus tard'],
         defaultId: 0,
@@ -563,7 +578,7 @@ function bootstrap() {
         dialog.showMessageBox(mainWindow, {
           type: 'info',
           title: 'Mises à jour',
-          message: `Movix ${app.getVersion()} est à jour.`,
+          message: `${APP_NAME} ${app.getVersion()} est à jour.`,
           buttons: ['OK'],
         }).catch(() => {});
       }
@@ -598,6 +613,7 @@ function bootstrap() {
           userscript: window.hasMovixUserscript === true || window.__MOVIX_EXTENSION_INSTALLED === true,
           dataset: document.documentElement.dataset.movixExtension,
           chromeShim: typeof chrome === 'object' && !!chrome.declarativeNetRequest,
+          adPopupMode: (function() { try { return localStorage.getItem('settings_ad_popup_mode'); } catch (e) { return null; } })(),
         };
         if (typeof GM_xmlhttpRequest !== 'function') return resolve(out);
         // Pub : une requête vers une régie connue doit échouer (ERR_BLOCKED_BY_CLIENT)
@@ -624,10 +640,15 @@ function bootstrap() {
     } catch (err) {
       result = { error: err && err.message };
     }
-    if (result) result.adBlock = adBlocker.summary();
-    const adOk = !adBlocker.enabled || (result && result.adProbe === 'bloqué' && result.adPopup === 'neutralisé');
+    if (result) {
+      result.adBlock = adBlocker.summary();
+      result.windowTitle = mainWindow ? mainWindow.getTitle() : null;
+    }
+    const adOk = !adBlocker.enabled
+      || (result && result.adProbe === 'bloqué' && result.adPopup === 'neutralisé' && result.adPopupMode === 'auto');
+    const titleOk = result && result.windowTitle === APP_NAME;
     const ok = result && result.bridge && result.gm === 'function' && result.userscript
-      && result.probe && result.probe.status === 200 && adOk;
+      && result.probe && result.probe.status === 200 && adOk && titleOk;
     console.log(`[movix:smoke] ${JSON.stringify(result)}`);
     console.log(`[movix:smoke] ${ok ? 'OK' : 'ÉCHEC'}`);
     setTimeout(() => app.exit(ok ? 0 : 1), 200);
@@ -654,7 +675,7 @@ function bootstrap() {
     registerIpc();
 
     createMainWindow();
-    mainWindow.loadFile(path.join(PAGES_DIR, 'loading.html')).catch(() => {});
+    loadLocalPage('loading.html');
     if (IS_DEV && process.argv.includes('--dev')) mainWindow.webContents.openDevTools({ mode: 'detach' });
 
     await resolveAddress();
@@ -664,7 +685,7 @@ function bootstrap() {
     adBlocker.load((url, init) => net.fetch(url, init)).catch(() => {});
   }).catch((err) => {
     console.error('[movix] démarrage impossible', err);
-    dialog.showErrorBox('Movix', `Démarrage impossible : ${err && err.message ? err.message : err}`);
+    dialog.showErrorBox(APP_NAME, `Démarrage impossible : ${err && err.message ? err.message : err}`);
     app.quit();
   });
 }

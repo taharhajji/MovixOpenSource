@@ -1,6 +1,6 @@
-# Movix — Application de bureau (Windows)
+# Orbit — Application de bureau (Windows)
 
-Application Windows (`.exe`) pour Movix, construite avec Electron. Même principe que l'[app mobile](../app/README.md) : elle charge le site Movix en direct — donc l'API et les serveurs de production, sans copie du front à maintenir — avec l'extension Movix intégrée (le userscript + un pont `GM_*` natif, sans CORS) et la bascule automatique entre miroirs.
+Application Windows (`.exe`) construite avec Electron, qui charge le site Movix sous une identité propre (« Orbit »). Même principe que l'[app mobile](../app/README.md) : elle charge le site Movix en direct — donc l'API et les serveurs de production, sans copie du front à maintenir — avec l'extension Movix intégrée (le userscript + un pont `GM_*` natif, sans CORS) et la bascule automatique entre miroirs.
 
 ## Ce que fait l'app
 
@@ -12,20 +12,29 @@ Application Windows (`.exe`) pour Movix, construite avec Electron. Même princip
 - **Session persistante** (connexion, profils, préférences), fenêtre restaurée, zoom, plein écran (F11), menu caché (touche Alt).
 - **Mises à jour automatiques** depuis les releases GitHub du dépôt (build packagé uniquement).
 
+## Identité de l'app (dissociée du site)
+
+L'interface ne mentionne pas Movix : nom de fenêtre, menus, pages de chargement/erreur, boîtes de dialogue, nom de l'exe et icône sont ceux d'**Orbit**. Le titre de la fenêtre reste « Orbit » quel que soit le `<title>` du site, et les miroirs sont présentés comme « Serveur 1, 2, … », jamais par leur domaine. Le contenu de la page web (le site lui-même) n'est pas modifié.
+
+Tout part de [`src/branding.js`](src/branding.js) (nom, slogan, identifiant, couleurs, jeton User-Agent `OrbitDesktop/<version>`). Pour renommer : modifier ce fichier et les champs `name` / `productName` / `build.appId` / `build.nsis.shortcutName` de `package.json`, puis `npm run icon` pour regénérer `build/icon.png` (dessiné en SVG dans `scripts/render-icon.js`, rendu hors écran par Electron).
+
+Les données locales (session, config, cache des filtres) vivent dans `%APPDATA%\Orbit`.
+
 ## Blocage des publicités (phase de test)
 
 Tant que l'app n'est pas publiée, **toutes les pubs sont bloquées par défaut**, sur trois couches :
 
 1. **Liste intégrée** de régies, popunders, smartlinks et traqueurs (`src/lib/adBlock.js`), active hors ligne dès le démarrage.
 2. **Moteur de filtres Ghostery** (`@ghostery/adblocker`) avec EasyList + EasyPrivacy : les listes sont téléchargées au premier lancement puis mises en cache dans `%APPDATA%\Movix\adblock-engine.bin`. Les requêtes bloquées échouent côté page en `ERR_BLOCKED_BY_CLIENT`, exactement comme avec uBlock.
-3. **Popups et redirections sortantes** : `window.open` vers un hôte externe non sûr renvoie une fenêtre factice (les flux « voir une pub » / SwiftFlux du site se valident sans qu'aucune pub ne parte) ; les navigations vers des smartlinks sont ignorées. Telegram, GitHub, Discord, YouTube, TMDB, Wikipédia restent ouvrables dans le navigateur.
+3. **Popups et redirections sortantes** : `window.open` vers un hôte externe non sûr renvoie une fenêtre factice ; les navigations vers des smartlinks sont ignorées. Telegram, GitHub, Discord, YouTube, TMDB, Wikipédia restent ouvrables dans le navigateur.
+4. **Plus de fenêtre « voir une pub avant de regarder »** : le site possède un mode « auto » pour ce popup (réglage Intermission, clé `settings_ad_popup_mode`). L'app le force avant le chargement de la page : rien n'est affiché, le lien pub est ouvert en arrière-plan (donc neutralisé par la couche 3) et la lecture démarre directement. Le réglage précédent est restauré si le blocage est désactivé. La porte SwiftFlux (catalogue MP4) garde son étape « voir une pub » : un clic, aucune pub ne part, puis Turnstile.
 
 Jamais bloqués : le site et ses miroirs, l'hôte imposé, l'API, TMDB, l'OAuth Discord/Google, Turnstile, les résolveurs de miroirs.
 
 Pour couper le blocage (par exemple pour tester la monétisation) :
 
 ```bash
-Movix.exe --adblock=off        # ou MOVIX_ADBLOCK=0, ou le menu Movix › « Bloquer les publicités »
+Orbit.exe --adblock=off        # ou MOVIX_ADBLOCK=0, ou le menu Orbit › « Bloquer les publicités »
 ```
 
 Le réglage du menu est mémorisé dans `config.json` (`"adBlock": false`). **Avant la publication**, passer la valeur par défaut à `false` dans `src/lib/config.js` (`DEFAULTS.adBlock`) ou retirer la fonctionnalité. Le menu « À propos » affiche le nombre de requêtes et de popups bloqués, avec les hôtes les plus fréquents.
@@ -36,18 +45,18 @@ Trois façons d'imposer l'URL du site (par ordre de priorité) :
 
 ```bash
 # 1. ligne de commande
-Movix.exe --site=http://localhost:3000
+Orbit.exe --site=http://localhost:3000
 
 # 2. variable d'environnement
 set MOVIX_SITE_URL=https://staging.exemple.tld
 
-# 3. fichier %APPDATA%\Movix\config.json  (menu Movix › Ouvrir le dossier de configuration)
+# 3. fichier %APPDATA%\Orbit\config.json  (menu Orbit › Ouvrir le dossier de configuration)
 { "siteUrl": "https://staging.exemple.tld" }
 ```
 
 Le front chargé continue d'utiliser ses propres `VITE_MAIN_API` / `VITE_WATCHPARTY_API` : pour tester une API locale, lancez `npm run dev` à la racine avec un `.env` qui pointe dessus, puis l'app avec `--site=http://localhost:3000`. Le userscript s'injecte aussi sur `localhost`.
 
-Les sessions bureau sont identifiables côté API par le suffixe `MovixDesktop/<version>` du User-Agent.
+Les sessions bureau sont identifiables côté API par le suffixe `OrbitDesktop/<version>` du User-Agent (libellées « Movix Desktop » dans `sessionDeviceInfo.js`).
 
 ## Prérequis
 
@@ -77,11 +86,11 @@ Produit dans `desktop/dist/` :
 
 | Fichier | Rôle |
 | --- | --- |
-| `Movix-Setup-<version>.exe` | Installeur NSIS (choix du dossier, raccourcis bureau + menu Démarrer, mises à jour auto) |
-| `Movix-<version>-portable.exe` | Exécutable portable, sans installation |
+| `Orbit-Setup-<version>.exe` | Installeur NSIS (choix du dossier, raccourcis bureau + menu Démarrer, mises à jour auto) |
+| `Orbit-<version>-portable.exe` | Exécutable portable, sans installation |
 | `latest.yml` | Manifeste lu par l'auto-updater |
 
-L'icône de l'exe est générée depuis `build/icon.png` (copie de `movix.png`).
+L'icône de l'exe est générée depuis `build/icon.png` (`npm run icon`).
 
 ### Publier une release (mises à jour automatiques)
 
@@ -104,6 +113,7 @@ Le build n'est pas signé : SmartScreen affichera un avertissement « éditeur i
 ```
 desktop/
 ├── src/
+│   ├── branding.js               # Identité de l'app (nom, couleurs, jeton UA) — dissociée du site
 │   ├── main.js                   # Processus principal : fenêtre, miroirs, failover, menu, IPC, auto-update
 │   ├── preload.js                # Expose window.__movixDesktop et injecte pont + userscript (document-start)
 │   ├── injection/
@@ -113,10 +123,11 @@ desktop/
 │   │   ├── mediaProxyHeaders.js  # Règles d'en-têtes par hébergeur (port de app/src/services/mediaProxyHeaders.ts)
 │   │   ├── addressResolver.js    # rentry → address.json → cache → fallback (port de app/src/services/addressResolver.ts)
 │   │   ├── navigationPolicy.js   # Ce qui reste dans la fenêtre / part dans le navigateur
-│   │   ├── config.js             # %APPDATA%/Movix/config.json, --site, MOVIX_SITE_URL
+│   │   ├── config.js             # %APPDATA%/Orbit/config.json, --site, MOVIX_SITE_URL
 │   │   └── menu.js               # Menu applicatif (FR)
 │   └── pages/                    # loading.html, error.html
 ├── scripts/sync-userscript.mjs   # Copie le userscript du dépôt dans resources/
+├── scripts/render-icon.js        # Dessine l'icône (SVG) et la rend en PNG via Electron
 ├── resources/movix.user.js       # Généré, ignoré par git
 ├── build/icon.png                # Icône (→ .ico par electron-builder)
 └── tests/                        # node --test

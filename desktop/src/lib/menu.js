@@ -6,6 +6,7 @@ const { Menu } = require('electron');
  * Menu de l'application (masqué par défaut : touche Alt pour l'afficher).
  *
  * @param {object} actions
+ * @param {string} actions.appName
  * @param {() => void} actions.reload
  * @param {() => void} actions.home
  * @param {() => void} actions.back
@@ -35,7 +36,7 @@ function buildMenu(actions) {
 
   const template = [
     {
-      label: 'Movix',
+      label: actions.appName,
       submenu: [
         { label: 'Accueil', accelerator: 'Alt+Home', click: actions.home },
         { label: 'Recharger', accelerator: 'CmdOrCtrl+R', click: actions.reload },
@@ -43,11 +44,11 @@ function buildMenu(actions) {
         { label: 'Page suivante', accelerator: 'Alt+Right', click: actions.forward },
         { type: 'separator' },
         {
-          label: actions.siteForced ? 'Miroir (site imposé par la config)' : 'Miroir',
+          label: actions.siteForced ? 'Serveur (imposé par la configuration)' : 'Serveur',
           submenu: [
             ...mirrorItems,
             { type: 'separator' },
-            { label: 'Actualiser la liste des miroirs', click: actions.refreshMirrors },
+            { label: 'Actualiser la liste des serveurs', click: actions.refreshMirrors },
           ],
         },
         { type: 'separator' },
@@ -92,11 +93,11 @@ function buildMenu(actions) {
       submenu: [
         { label: 'Vérifier les mises à jour', click: actions.checkUpdates },
         { type: 'separator' },
-        { label: 'Telegram Movix', click: () => actions.openExternal(actions.telegramUrl) },
-        { label: 'Code source (GitHub)', click: () => actions.openExternal(actions.githubUrl) },
+        { label: 'Support', click: () => actions.openExternal(actions.telegramUrl) },
+        { label: 'Code source', click: () => actions.openExternal(actions.githubUrl) },
         { label: 'Signaler un problème', click: () => actions.openExternal(`${actions.githubUrl}/issues`) },
         { type: 'separator' },
-        { label: 'À propos de Movix', click: actions.about },
+        { label: `À propos de ${actions.appName}`, click: actions.about },
       ],
     },
   ];

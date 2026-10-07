@@ -12,7 +12,7 @@
  * en-têtes des hébergeurs sont posés par session.webRequest côté principal.
  */
 
-function buildBridgeRuntime({ version }) {
+function buildBridgeRuntime({ version, appName = 'Orbit' }) {
   return `
 (function() {
   'use strict';
@@ -20,6 +20,34 @@ function buildBridgeRuntime({ version }) {
   var native = window.__movixDesktop;
   if (!native || typeof native.gmFetch !== 'function') return;
   window.__MOVIX_DESKTOP_BRIDGE_READY = true;
+  var APP_NAME = ${JSON.stringify(appName)};
+
+  // --- Popup « voir une pub avant de regarder » ---------------------------------
+  // Le site propose un mode « auto » pour ce popup (réglage Intermission) : rien
+  // n'est affiché, le lien pub est ouvert en arrière-plan puis la lecture
+  // démarre. Blocage des pubs actif, on force ce mode avant que le site ne lise
+  // le réglage : le lien pub tombe dans la fenêtre factice ci-dessous, donc
+  // aucune pub ne part, et le popup n'apparaît jamais. Le réglage précédent est
+  // mémorisé et restauré si le blocage est désactivé.
+  (function syncAdPopupMode() {
+    var KEY = 'settings_ad_popup_mode';
+    var MARK = 'orbit_desktop:ad_popup_forced';
+    try {
+      var blocking = typeof native.isAdBlockEnabled === 'function' && native.isAdBlockEnabled();
+      var current = localStorage.getItem(KEY);
+      if (blocking) {
+        if (current !== 'auto') {
+          localStorage.setItem(MARK, current === null ? '' : current);
+          localStorage.setItem(KEY, 'auto');
+        }
+      } else if (localStorage.getItem(MARK) !== null) {
+        var previous = localStorage.getItem(MARK);
+        if (previous) localStorage.setItem(KEY, previous);
+        else localStorage.removeItem(KEY);
+        localStorage.removeItem(MARK);
+      }
+    } catch (e) {}
+  })();
 
   var _counter = 0;
   function nextId() { return 'gm_' + (++_counter) + '_' + Date.now(); }
@@ -239,7 +267,7 @@ function buildBridgeRuntime({ version }) {
   window.GM_deleteValue = GM_deleteValue;
   window.GM_listValues = GM_listValues;
   window.GM_info = {
-    scriptHandler: 'Movix Desktop',
+    scriptHandler: APP_NAME + ' Desktop',
     version: ${JSON.stringify(version)},
     script: { name: 'Movix Proxy Extension', namespace: 'https://movix.cash', version: ${JSON.stringify(version)} }
   };
@@ -254,7 +282,7 @@ function buildBridgeRuntime({ version }) {
   window.unsafeWindow = window;
   window.__MOVIX_DESKTOP__ = { version: ${JSON.stringify(version)}, platform: 'windows' };
 
-  console.log('[Movix Desktop] Pont GM initialisé (v' + ${JSON.stringify(version)} + ')');
+  console.log('[' + APP_NAME + '] Pont GM initialisé (v' + ${JSON.stringify(version)} + ')');
 })();
 `;
 }
@@ -262,8 +290,8 @@ function buildBridgeRuntime({ version }) {
 /**
  * Assemble le script complet : pont GM puis userscript.
  */
-function buildInjectedJavaScript({ version, userscriptSource }) {
-  return `${buildBridgeRuntime({ version })}
+function buildInjectedJavaScript({ version, userscriptSource, appName }) {
+  return `${buildBridgeRuntime({ version, appName })}
 
 // --- Userscript Movix ---
 (function() {

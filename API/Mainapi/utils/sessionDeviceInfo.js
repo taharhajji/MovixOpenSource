@@ -46,8 +46,8 @@ function detectBrowser(ua, clientHints) {
   // L'app de bureau (desktop/) se présente comme un Chrome standard — Google
   // refuse l'OAuth aux navigateurs embarqués — avec ce suffixe pour être
   // reconnue ici.
-  if (/MovixDesktop\//i.test(ua)) {
-    return { name: 'Movix Desktop', version: versionFrom(ua, /MovixDesktop\/([^\s]+)/i) };
+  if (/(?:MovixDesktop|OrbitDesktop)\//i.test(ua)) {
+    return { name: 'Movix Desktop', version: versionFrom(ua, /(?:MovixDesktop|OrbitDesktop)\/([^\s]+)/i) };
   }
   if (/EdgA\//i.test(ua) || /EdgiOS\//i.test(ua) || /Edg\//i.test(ua)) {
     return { name: 'Microsoft Edge', version: versionFrom(ua, /(?:EdgA|EdgiOS|Edg)\/([^\s]+)/i) };

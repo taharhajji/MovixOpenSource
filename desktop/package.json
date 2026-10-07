@@ -1,9 +1,9 @@
 {
-  "name": "movix-desktop",
-  "productName": "Movix",
+  "name": "orbit-desktop",
+  "productName": "Orbit",
   "version": "1.0.0",
-  "description": "Application de bureau Movix (Windows) : charge le site Movix en direct, connectée à l'API et aux serveurs Movix, avec l'extension intégrée.",
-  "author": "Movix",
+  "description": "Application de bureau Windows (Electron) : lecteur de streaming connecté aux serveurs du service, extension intégrée, blocage des pubs en phase de test.",
+  "author": "Orbit",
   "license": "CC-BY-NC-4.0",
   "private": true,
   "main": "src/main.js",
@@ -21,7 +21,8 @@
     "build": "electron-builder --win",
     "build:dir": "electron-builder --win --dir",
     "release:manifest": "node scripts/release-manifest.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "icon": "electron scripts/render-icon.js"
   },
   "devDependencies": {
     "electron": "33.4.11",
@@ -32,9 +33,9 @@
     "electron-updater": "^6.3.0"
   },
   "build": {
-    "appId": "com.movix.desktop",
-    "productName": "Movix",
-    "copyright": "Movix — CC BY-NC 4.0",
+    "appId": "com.orbit.player",
+    "productName": "Orbit",
+    "copyright": "CC BY-NC 4.0",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -71,7 +72,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Movix",
+      "shortcutName": "Orbit",
       "artifactName": "${productName}-Setup-${version}.${ext}",
       "deleteAppDataOnUninstall": false,
       "language": "1036"
