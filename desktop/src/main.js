@@ -343,7 +343,17 @@ function bootstrap() {
     }
 
     if (process.env.MOVIX_SMOKE) {
-      wc.once('did-finish-load', () => runSmokeTest(wc));
+      // Capture de l'écran de chargement (logo, nom) avant la page du site.
+      wc.once('did-finish-load', async () => {
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          const shot = await wc.capturePage();
+          fs.writeFileSync(path.join(__dirname, '..', 'smoke-loading.png'), shot.toPNG());
+        } catch {
+          // capture facultative
+        }
+        runSmokeTest(wc);
+      });
     }
 
     wc.on('render-process-gone', (_event, details) => {

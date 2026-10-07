@@ -18,8 +18,11 @@ module.exports = Object.freeze({
   // Suffixe du User-Agent : identifie les sessions bureau côté API sans
   // mentionner le site. Reconnu par API/Mainapi/utils/sessionDeviceInfo.js.
   UA_TOKEN: 'MewflixDesktop',
-  ACCENT: '#6366f1',
-  ACCENT_SOFT: '#a5b4fc',
-  BACKGROUND: '#07070b',
+  // Charte du logo : carré bleu glacé, lettres ardoise, halo froid sur fond
+  // anthracite. ACCENT sert au texte de marque sur le header sombre du site.
+  ACCENT: '#dbe6f6',
+  ACCENT_SOFT: '#9fb3d1',
+  SLATE: '#4a5570',
+  BACKGROUND: '#141518',
   LICENSE_LINE: 'Licence CC BY-NC 4.0',
 });
