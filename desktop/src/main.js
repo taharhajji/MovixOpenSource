@@ -138,7 +138,9 @@ function bootstrap() {
         accent: BRAND.ACCENT,
         hideSiteBranding: config.hideSiteBranding,
         localVip: config.localVipEnabled,
+        swiftfluxSource: config.swiftfluxSource,
       });
+      console.log(`[movix] source SwiftFlux (vérification robot) : ${config.swiftfluxSource}`);
       console.log(`[movix] marque du site ${config.hideSiteBranding ? 'masquée' : 'visible'} dans la page`);
       console.log(`[movix] statut VIP local ${config.localVipEnabled ? 'actif' : 'désactivé'}`);
       console.log(`[movix] userscript chargé (${(userscriptSource.length / 1024).toFixed(0)} Ko)`);
@@ -656,6 +658,15 @@ function bootstrap() {
           dataset: document.documentElement.dataset.movixExtension,
           chromeShim: typeof chrome === 'object' && !!chrome.declarativeNetRequest,
           adPopupMode: (function() { try { return localStorage.getItem('settings_ad_popup_mode'); } catch (e) { return null; } })(),
+          swiftflux: (function() {
+            try {
+              var prefs = JSON.parse(localStorage.getItem('settings_source_priority_prefs') || 'null');
+              var order = prefs && prefs.categories && prefs.categories.moviesTv && prefs.categories.moviesTv.sourceOrder;
+              if (!order) return null;
+              var idx = order.findIndex(function(e) { return e && e.id === 'swiftflux'; });
+              return { position: idx + 1, of: order.length, enabled: idx >= 0 ? order[idx].enabled : null };
+            } catch (e) { return null; }
+          })(),
           vip: (function() {
             try {
               localStorage.removeItem('is_vip');
@@ -715,8 +726,11 @@ function bootstrap() {
     const brandOk = !config.hideSiteBranding
       || (result && typeof result.headerBrand === 'string' && !/movix/i.test(result.headerBrand));
     const vipOk = !config.localVipEnabled || (result && result.vip === true);
+    const swiftfluxOk = config.swiftfluxSource === 'keep'
+      || (result && result.swiftflux && result.swiftflux.position === result.swiftflux.of
+        && result.swiftflux.enabled === (config.swiftfluxSource !== 'off'));
     const ok = result && result.bridge && result.gm === 'function' && result.userscript
-      && result.probe && result.probe.status === 200 && adOk && titleOk && brandOk && vipOk;
+      && result.probe && result.probe.status === 200 && adOk && titleOk && brandOk && vipOk && swiftfluxOk;
     // Capture de la fenêtre pour vérification visuelle (desktop/smoke.png).
     try {
       const shot = await wc.capturePage();

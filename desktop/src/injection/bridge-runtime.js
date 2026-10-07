@@ -12,7 +12,20 @@
  * en-têtes des hébergeurs sont posés par session.webRequest côté principal.
  */
 
-function buildBridgeRuntime({ version, appName = 'Orbit', accent = '#6366f1', hideSiteBranding = false, localVip = false }) {
+const { buildSiteTweaks } = require('./site-tweaks');
+
+function buildBridgeRuntime({ version, appName = 'MEWFLIX', accent = '#dbe6f6', hideSiteBranding = false, localVip = false, swiftfluxSource = 'keep' }) {
+  // Retouches de site partagées avec l'app mobile. Le popup pub suit l'état du
+  // blocage des pubs, lu sur le pont natif au chargement de la page.
+  const siteTweaks = buildSiteTweaks({
+    appName,
+    accent,
+    hideSiteBranding,
+    localVip,
+    adPopupAutoExpr: "typeof native.isAdBlockEnabled === 'function' && native.isAdBlockEnabled()",
+    swiftfluxSource,
+    storagePrefix: 'orbit_desktop',
+  });
   return `
 (function() {
   'use strict';
@@ -23,128 +36,7 @@ function buildBridgeRuntime({ version, appName = 'Orbit', accent = '#6366f1', hi
   var APP_NAME = ${JSON.stringify(appName)};
   var ACCENT = ${JSON.stringify(accent)};
 
-  // --- Statut VIP local (phase de test) ------------------------------------------
-  // Le site lit son statut VIP dans localStorage ('is_vip' === 'true') et le
-  // révoque dès que la vérification serveur échoue ou qu'aucun code n'est
-  // enregistré (vipUtils.revokeVipStatus → removeItem('is_vip')). On épingle
-  // donc la clé au niveau du prototype Storage : toute lecture rend 'true',
-  // toute écriture ou suppression est ignorée. Ce que l'API sert uniquement
-  // aux vrais codes (en-tête x-access-key) n'est pas concerné.
-  if (${localVip ? 'true' : 'false'}) (function pinLocalVip() {
-    var KEY = 'is_vip';
-    try {
-      var proto = Storage.prototype;
-      var getItem = proto.getItem, setItem = proto.setItem, removeItem = proto.removeItem;
-      var isLocal = function(storage) { try { return storage === window.localStorage; } catch (e) { return false; } };
-      proto.getItem = function(key) {
-        if (key === KEY && isLocal(this)) return 'true';
-        return getItem.apply(this, arguments);
-      };
-      proto.setItem = function(key, value) {
-        if (key === KEY && isLocal(this)) return setItem.call(this, KEY, 'true');
-        return setItem.apply(this, arguments);
-      };
-      proto.removeItem = function(key) {
-        if (key === KEY && isLocal(this)) return undefined;
-        return removeItem.apply(this, arguments);
-      };
-      setItem.call(window.localStorage, KEY, 'true');
-      window.__ORBIT_LOCAL_VIP__ = true;
-    } catch (e) {}
-  })();
-
-  // --- Marque du site masquée dans la page ---------------------------------------
-  // Le site n'a pas d'option pour ça : on cache ses images de logo et son intro
-  // animée par CSS, et on remplace le texte « MOVIX » du header/footer par le
-  // nom de l'app. Un observateur rejoue le remplacement après chaque re-rendu
-  // React, en ne parcourant que header/footer (coût négligeable).
-  if (${hideSiteBranding ? 'true' : 'false'}) (function hideSiteBranding() {
-    var CSS = 'img[src*="/movix"], img[alt*="movix" i], .bb-logo { display: none !important; }';
-    var BRAND_RE = /^(\\s*)movix(\\s*)$/i;
-    var scheduled = false;
-
-    function addStyle() {
-      if (document.getElementById('orbit-site-branding')) return true;
-      var parent = document.head || document.documentElement;
-      if (!parent) return false;
-      var style = document.createElement('style');
-      style.id = 'orbit-site-branding';
-      style.textContent = CSS;
-      parent.appendChild(style);
-      return true;
-    }
-
-    function scrubTextNodes(root) {
-      var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-      var node;
-      while ((node = walker.nextNode())) {
-        var match = BRAND_RE.exec(node.nodeValue || '');
-        if (!match) continue;
-        var original = node.nodeValue.trim();
-        var replacement = original === original.toUpperCase() ? APP_NAME.toUpperCase() : APP_NAME;
-        node.nodeValue = match[1] + replacement + match[2];
-        var el = node.parentElement;
-        if (el && /text-red/.test(el.className || '')) el.style.color = ACCENT;
-      }
-    }
-
-    function scrub() {
-      addStyle();
-      var roots = document.querySelectorAll('header, footer');
-      for (var i = 0; i < roots.length; i++) scrubTextNodes(roots[i]);
-    }
-
-    // Le callback d'un MutationObserver s'exécute en microtâche, donc avant le
-    // rendu : remplacer ici évite tout flash de la marque d'origine. Nos
-    // propres remplacements déclenchent un nouveau callback, qui ne trouve
-    // plus rien à faire ; le garde évite une réentrance pendant le parcours.
-    function schedule() {
-      if (scheduled) return;
-      scheduled = true;
-      try { scrub(); } finally { scheduled = false; }
-    }
-
-    if (!addStyle()) {
-      new MutationObserver(function(_m, observer) {
-        if (addStyle()) observer.disconnect();
-      }).observe(document, { childList: true });
-    }
-    var start = function() {
-      scrub();
-      new MutationObserver(schedule).observe(document.documentElement, {
-        childList: true, subtree: true, characterData: true
-      });
-    };
-    if (document.documentElement) start();
-    else document.addEventListener('DOMContentLoaded', start, { once: true });
-  })();
-
-  // --- Popup « voir une pub avant de regarder » ---------------------------------
-  // Le site propose un mode « auto » pour ce popup (réglage Intermission) : rien
-  // n'est affiché, le lien pub est ouvert en arrière-plan puis la lecture
-  // démarre. Blocage des pubs actif, on force ce mode avant que le site ne lise
-  // le réglage : le lien pub tombe dans la fenêtre factice ci-dessous, donc
-  // aucune pub ne part, et le popup n'apparaît jamais. Le réglage précédent est
-  // mémorisé et restauré si le blocage est désactivé.
-  (function syncAdPopupMode() {
-    var KEY = 'settings_ad_popup_mode';
-    var MARK = 'orbit_desktop:ad_popup_forced';
-    try {
-      var blocking = typeof native.isAdBlockEnabled === 'function' && native.isAdBlockEnabled();
-      var current = localStorage.getItem(KEY);
-      if (blocking) {
-        if (current !== 'auto') {
-          localStorage.setItem(MARK, current === null ? '' : current);
-          localStorage.setItem(KEY, 'auto');
-        }
-      } else if (localStorage.getItem(MARK) !== null) {
-        var previous = localStorage.getItem(MARK);
-        if (previous) localStorage.setItem(KEY, previous);
-        else localStorage.removeItem(KEY);
-        localStorage.removeItem(MARK);
-      }
-    } catch (e) {}
-  })();
+${siteTweaks}
 
   var _counter = 0;
   function nextId() { return 'gm_' + (++_counter) + '_' + Date.now(); }
@@ -387,8 +279,8 @@ function buildBridgeRuntime({ version, appName = 'Orbit', accent = '#6366f1', hi
 /**
  * Assemble le script complet : pont GM puis userscript.
  */
-function buildInjectedJavaScript({ version, userscriptSource, appName, accent, hideSiteBranding, localVip }) {
-  return `${buildBridgeRuntime({ version, appName, accent, hideSiteBranding, localVip })}
+function buildInjectedJavaScript({ version, userscriptSource, appName, accent, hideSiteBranding, localVip, swiftfluxSource }) {
+  return `${buildBridgeRuntime({ version, appName, accent, hideSiteBranding, localVip, swiftfluxSource })}
 
 // --- Userscript Movix ---
 (function() {

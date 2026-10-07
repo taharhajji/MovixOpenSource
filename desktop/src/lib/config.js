@@ -36,6 +36,11 @@ const DEFAULTS = Object.freeze({
   // en base. Les fonctions VIP servies par l'API restent soumises à un vrai
   // code. MOVIX_LOCAL_VIP=0 ou --local-vip=off pour le couper.
   localVip: true,
+  // Source SwiftFlux : la seule dont la lecture exige la vérification « je ne
+  // suis pas un robot » (Turnstile) côté API. 'last' = reléguée en fin de
+  // priorité (plus de vérification tant qu'une autre source existe),
+  // 'off' = désactivée, 'keep' = ordre du site inchangé. MOVIX_SWIFTFLUX=…
+  swiftfluxSource: 'last',
 });
 
 function readOnOffOverride(argv, env, flag, envName) {
@@ -115,6 +120,8 @@ function readSiteOverride(argv, env) {
 class AppConfig {
   constructor(userDataDir, { argv = [], env = {} } = {}) {
     this.filePath = path.join(userDataDir, 'config.json');
+    this.argv = argv;
+    this.env = env;
     this.values = { ...DEFAULTS, ...this._read() };
     this.values.siteUrl = normalizeSiteUrl(this.values.siteUrl);
     this.siteOverride = readSiteOverride(argv, env);
@@ -122,6 +129,20 @@ class AppConfig {
     this.siteBrandingOverride = readSiteBrandingOverride(argv, env);
     this.secureDnsOverride = readOnOffOverride(argv, env, 'secure-dns', 'MOVIX_SECURE_DNS');
     this.localVipOverride = readOnOffOverride(argv, env, 'local-vip', 'MOVIX_LOCAL_VIP');
+  }
+
+  /** Traitement de la source SwiftFlux : 'last' | 'off' | 'keep'. */
+  get swiftfluxSource() {
+    const candidates = [
+      ...this.argv.filter((a) => a.startsWith('--swiftflux=')).map((a) => a.slice('--swiftflux='.length)),
+      this.env.MOVIX_SWIFTFLUX,
+      this.values.swiftfluxSource,
+    ];
+    for (const value of candidates) {
+      const normalized = String(value == null ? '' : value).trim().toLowerCase();
+      if (['last', 'off', 'keep'].includes(normalized)) return normalized;
+    }
+    return 'last';
   }
 
   /** Statut VIP local effectif (CLI/env > config.json). */

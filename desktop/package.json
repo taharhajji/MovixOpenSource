@@ -22,7 +22,9 @@
     "build:dir": "electron-builder --win --dir",
     "release:manifest": "node scripts/release-manifest.mjs",
     "test": "node --test",
-    "icon": "electron scripts/render-icon.js"
+    "icon": "electron scripts/render-icon.js",
+    "build:mac": "electron-builder --mac",
+    "build:mac:dir": "electron-builder --mac --dir"
   },
   "devDependencies": {
     "electron": "33.4.11",
@@ -86,6 +88,46 @@
         "url": "https://raw.githubusercontent.com/movixstream/MovixOpenSource/main/desktop/release",
         "channel": "latest"
       }
-    ]
+    ],
+    "mac": {
+      "category": "public.app-category.entertainment",
+      "icon": "build/icon.png",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}",
+      "darkModeSupport": true
+    },
+    "dmg": {
+      "title": "${productName}",
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    }
   }
 }

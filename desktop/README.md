@@ -39,6 +39,24 @@ Limite : ce qui est servi **par l'API** uniquement aux vrais codes (en-tête `x-
 
 Menu MEWFLIX › « Statut VIP local », `--local-vip=off` ou `MOVIX_LOCAL_VIP=0` pour le couper. **À passer à `false` (`DEFAULTS.localVip`) avant publication.**
 
+## Vérification « robot » au lancement des films (Turnstile)
+
+Une seule source du site demande une vérification Cloudflare Turnstile avant la lecture : **SwiftFlux** (catalogue MP4, composant `SwiftfluxGate`). Cette vérification est exigée **par l'API** (`API/Mainapi/routes/swiftflow.js` vérifie le jeton côté serveur, même pour les admins) : une app ne peut pas la supprimer sans casser ces sources. Les autres sources (Vidzy, Uqload, LuluStream, Vidmoly, Darkino…) n'ont pas d'étape visible.
+
+L'app agit donc sur l'**ordre des sources** du site (réglage « Sources », clé `settings_source_priority_prefs`) avant le chargement de la page : SwiftFlux est placée en dernière position, donc jamais choisie automatiquement tant qu'une autre source existe, et le « dernier lecteur mémorisé » est oublié s'il s'agissait de SwiftFlux. Les autres réglages de l'utilisateur sont conservés.
+
+| Valeur | Effet |
+| --- | --- |
+| `last` (défaut) | SwiftFlux en dernier, reste disponible si rien d'autre n'existe (la vérification apparaît alors) |
+| `off` | SwiftFlux désactivée : jamais de vérification, mais les films disponibles uniquement en SwiftFlux ne se lisent pas |
+| `keep` | Ordre du site inchangé |
+
+Réglable par `--swiftflux=off`, `MOVIX_SWIFTFLUX=off` ou `"swiftfluxSource": "off"` dans `config.json`. Les vérifications Turnstile *invisibles* (commentaires, likes, Darkino) ne demandent rien à l'utilisateur et ne sont pas concernées.
+
+## macOS et iOS
+
+Voir [`apple/README.md`](../apple/README.md) : macOS est la même app Electron (`npm run build:mac` sur un Mac, ou le workflow `Desktop macOS`), iOS est l'app mobile React Native du dépôt habillée MEWFLIX (`apple/ios/apply-branding.mjs` + workflow `iOS MEWFLIX unsigned IPA`). Les retouches de site sont partagées via [`src/injection/site-tweaks.js`](src/injection/site-tweaks.js).
+
 ## DNS sécurisé (contournement du filtrage FAI)
 
 Même rôle que le DNS 1.1.1.1 de l'app mobile : la résolution DNS de toute l'app passe en DNS-over-HTTPS (Cloudflare, Google, Quad9 en secours). Les fournisseurs d'accès qui filtrent des hébergeurs vidéo en détournant leur DNS (symptômes : `ERR_CERT_AUTHORITY_INVALID`, `ERR_CONNECTION_RESET` sur Veev, VOE, DoodStream…) sont contournés. Actif par défaut ; menu MEWFLIX › « DNS sécurisé », `--secure-dns=off` ou `MOVIX_SECURE_DNS=0` pour le couper. Un blocage par inspection de paquets (DPI) n'est pas contourné : il faut alors un VPN.
