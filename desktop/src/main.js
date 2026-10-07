@@ -137,8 +137,10 @@ function bootstrap() {
         appName: APP_NAME,
         accent: BRAND.ACCENT,
         hideSiteBranding: config.hideSiteBranding,
+        localVip: config.localVipEnabled,
       });
       console.log(`[movix] marque du site ${config.hideSiteBranding ? 'masquée' : 'visible'} dans la page`);
+      console.log(`[movix] statut VIP local ${config.localVipEnabled ? 'actif' : 'désactivé'}`);
       console.log(`[movix] userscript chargé (${(userscriptSource.length / 1024).toFixed(0)} Ko)`);
     } catch (err) {
       injectionCode = '';
@@ -507,6 +509,13 @@ function bootstrap() {
       toggleAdBlock: setAdBlock,
       secureDnsEnabled: config.secureDnsEnabled,
       toggleSecureDns: setSecureDns,
+      localVipEnabled: config.localVipEnabled,
+      toggleLocalVip: (enabled) => {
+        config.set('localVip', Boolean(enabled));
+        loadInjectionCode();
+        refreshMenu();
+        if (mainWindow) mainWindow.webContents.reload();
+      },
       selectMirror: (url) => {
         const index = chain.indexOf(url);
         if (index >= 0) {
@@ -540,6 +549,7 @@ function bootstrap() {
             : 'Blocage des pubs : désactivé';
         })(),
         `DNS sécurisé (DoH) : ${config.secureDnsEnabled ? 'actif' : 'désactivé'}`,
+        `Statut VIP local : ${config.localVipEnabled ? 'actif' : 'désactivé'}`,
         `Electron ${process.versions.electron} · Chromium ${process.versions.chrome} · Node ${process.versions.node}`,
         '',
         BRAND.LICENSE_LINE,
@@ -636,6 +646,12 @@ function bootstrap() {
           dataset: document.documentElement.dataset.movixExtension,
           chromeShim: typeof chrome === 'object' && !!chrome.declarativeNetRequest,
           adPopupMode: (function() { try { return localStorage.getItem('settings_ad_popup_mode'); } catch (e) { return null; } })(),
+          vip: (function() {
+            try {
+              localStorage.removeItem('is_vip');
+              return localStorage.getItem('is_vip') === 'true' && window.__ORBIT_LOCAL_VIP__ === true;
+            } catch (e) { return false; }
+          })(),
         };
         if (typeof GM_xmlhttpRequest !== 'function') return resolve(out);
         // Pub : une requête vers une régie connue doit échouer (ERR_BLOCKED_BY_CLIENT)
@@ -649,11 +665,17 @@ function bootstrap() {
         // Marque du site : attend le header React, puis lit le texte du lien logo.
         const brandProbe = new Promise((done) => {
           const started = Date.now();
+          let firstSeenAt = 0;
           (function poll() {
             const link = document.querySelector('header a[href="/"]');
-            if (link && link.textContent.trim()) return done(link.textContent.trim());
-            if (Date.now() - started > 12000) return done(null);
-            setTimeout(poll, 200);
+            const text = link ? link.textContent.trim() : '';
+            if (text) {
+              if (!firstSeenAt) firstSeenAt = Date.now();
+              // Laisse 1,5 s au remplacement après l'apparition du header.
+              if (!/movix/i.test(text) || Date.now() - firstSeenAt > 1500) return done(text);
+            }
+            if (Date.now() - started > 12000) return done(text || null);
+            setTimeout(poll, 100);
           })();
         });
         const finish = (extra) => Promise.all([adProbe, brandProbe])
@@ -682,8 +704,9 @@ function bootstrap() {
     const titleOk = result && result.windowTitle === APP_NAME;
     const brandOk = !config.hideSiteBranding
       || (result && typeof result.headerBrand === 'string' && !/movix/i.test(result.headerBrand));
+    const vipOk = !config.localVipEnabled || (result && result.vip === true);
     const ok = result && result.bridge && result.gm === 'function' && result.userscript
-      && result.probe && result.probe.status === 200 && adOk && titleOk && brandOk;
+      && result.probe && result.probe.status === 200 && adOk && titleOk && brandOk && vipOk;
     // Capture de la fenêtre pour vérification visuelle (desktop/smoke.png).
     try {
       const shot = await wc.capturePage();

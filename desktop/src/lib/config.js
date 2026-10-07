@@ -31,6 +31,11 @@ const DEFAULTS = Object.freeze({
   // des fournisseurs d'accès, comme le DNS 1.1.1.1 de l'app mobile.
   // MOVIX_SECURE_DNS=0 ou --secure-dns=off pour le couper.
   secureDns: true,
+  // Statut VIP local (phase de test) : le site se comporte comme pour un
+  // compte VIP (pas de popup pub, sources et réglages VIP visibles) sans code
+  // en base. Les fonctions VIP servies par l'API restent soumises à un vrai
+  // code. MOVIX_LOCAL_VIP=0 ou --local-vip=off pour le couper.
+  localVip: true,
 });
 
 function readOnOffOverride(argv, env, flag, envName) {
@@ -116,6 +121,13 @@ class AppConfig {
     this.adBlockOverride = readAdBlockOverride(argv, env);
     this.siteBrandingOverride = readSiteBrandingOverride(argv, env);
     this.secureDnsOverride = readOnOffOverride(argv, env, 'secure-dns', 'MOVIX_SECURE_DNS');
+    this.localVipOverride = readOnOffOverride(argv, env, 'local-vip', 'MOVIX_LOCAL_VIP');
+  }
+
+  /** Statut VIP local effectif (CLI/env > config.json). */
+  get localVipEnabled() {
+    if (this.localVipOverride !== null) return this.localVipOverride;
+    return this.values.localVip !== false;
   }
 
   /** DNS sécurisé effectif (CLI/env > config.json). */

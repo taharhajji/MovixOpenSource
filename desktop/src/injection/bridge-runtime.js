@@ -12,7 +12,7 @@
  * en-têtes des hébergeurs sont posés par session.webRequest côté principal.
  */
 
-function buildBridgeRuntime({ version, appName = 'Orbit', accent = '#6366f1', hideSiteBranding = false }) {
+function buildBridgeRuntime({ version, appName = 'Orbit', accent = '#6366f1', hideSiteBranding = false, localVip = false }) {
   return `
 (function() {
   'use strict';
@@ -22,6 +22,36 @@ function buildBridgeRuntime({ version, appName = 'Orbit', accent = '#6366f1', hi
   window.__MOVIX_DESKTOP_BRIDGE_READY = true;
   var APP_NAME = ${JSON.stringify(appName)};
   var ACCENT = ${JSON.stringify(accent)};
+
+  // --- Statut VIP local (phase de test) ------------------------------------------
+  // Le site lit son statut VIP dans localStorage ('is_vip' === 'true') et le
+  // révoque dès que la vérification serveur échoue ou qu'aucun code n'est
+  // enregistré (vipUtils.revokeVipStatus → removeItem('is_vip')). On épingle
+  // donc la clé au niveau du prototype Storage : toute lecture rend 'true',
+  // toute écriture ou suppression est ignorée. Ce que l'API sert uniquement
+  // aux vrais codes (en-tête x-access-key) n'est pas concerné.
+  if (${localVip ? 'true' : 'false'}) (function pinLocalVip() {
+    var KEY = 'is_vip';
+    try {
+      var proto = Storage.prototype;
+      var getItem = proto.getItem, setItem = proto.setItem, removeItem = proto.removeItem;
+      var isLocal = function(storage) { try { return storage === window.localStorage; } catch (e) { return false; } };
+      proto.getItem = function(key) {
+        if (key === KEY && isLocal(this)) return 'true';
+        return getItem.apply(this, arguments);
+      };
+      proto.setItem = function(key, value) {
+        if (key === KEY && isLocal(this)) return setItem.call(this, KEY, 'true');
+        return setItem.apply(this, arguments);
+      };
+      proto.removeItem = function(key) {
+        if (key === KEY && isLocal(this)) return undefined;
+        return removeItem.apply(this, arguments);
+      };
+      setItem.call(window.localStorage, KEY, 'true');
+      window.__ORBIT_LOCAL_VIP__ = true;
+    } catch (e) {}
+  })();
 
   // --- Marque du site masquée dans la page ---------------------------------------
   // Le site n'a pas d'option pour ça : on cache ses images de logo et son intro
@@ -59,16 +89,19 @@ function buildBridgeRuntime({ version, appName = 'Orbit', accent = '#6366f1', hi
     }
 
     function scrub() {
-      scheduled = false;
       addStyle();
       var roots = document.querySelectorAll('header, footer');
       for (var i = 0; i < roots.length; i++) scrubTextNodes(roots[i]);
     }
 
+    // Le callback d'un MutationObserver s'exécute en microtâche, donc avant le
+    // rendu : remplacer ici évite tout flash de la marque d'origine. Nos
+    // propres remplacements déclenchent un nouveau callback, qui ne trouve
+    // plus rien à faire ; le garde évite une réentrance pendant le parcours.
     function schedule() {
       if (scheduled) return;
       scheduled = true;
-      requestAnimationFrame(scrub);
+      try { scrub(); } finally { scheduled = false; }
     }
 
     if (!addStyle()) {
@@ -354,8 +387,8 @@ function buildBridgeRuntime({ version, appName = 'Orbit', accent = '#6366f1', hi
 /**
  * Assemble le script complet : pont GM puis userscript.
  */
-function buildInjectedJavaScript({ version, userscriptSource, appName, accent, hideSiteBranding }) {
-  return `${buildBridgeRuntime({ version, appName, accent, hideSiteBranding })}
+function buildInjectedJavaScript({ version, userscriptSource, appName, accent, hideSiteBranding, localVip }) {
+  return `${buildBridgeRuntime({ version, appName, accent, hideSiteBranding, localVip })}
 
 // --- Userscript Movix ---
 (function() {

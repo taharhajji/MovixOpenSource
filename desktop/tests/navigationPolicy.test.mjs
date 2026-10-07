@@ -9,6 +9,19 @@ const require = createRequire(import.meta.url);
 const { isAllowedInApp, isMovixHost, isSiteHost } = require('../src/lib/navigationPolicy.js');
 const { AppConfig, readSiteOverride, normalizeSiteUrl, readSiteBrandingOverride } = require('../src/lib/config.js');
 
+test('statut VIP local actif par défaut, --local-vip=off et MOVIX_LOCAL_VIP=0 le coupent', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'movix-vip-'));
+  try {
+    assert.equal(new AppConfig(dir).localVipEnabled, true);
+    assert.equal(new AppConfig(dir, { argv: ['--local-vip=off'] }).localVipEnabled, false);
+    assert.equal(new AppConfig(dir, { env: { MOVIX_LOCAL_VIP: '0' } }).localVipEnabled, false);
+    new AppConfig(dir).set('localVip', false);
+    assert.equal(new AppConfig(dir).localVipEnabled, false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('marque du site masquée par défaut, réaffichable par --site-branding=on ou MOVIX_SITE_BRANDING=1', () => {
   const dir = mkdtempSync(join(tmpdir(), 'movix-brand-'));
   try {

@@ -59,6 +59,12 @@ function buildMenu(actions) {
           click: (item) => actions.toggleAdBlock(item.checked),
         },
         {
+          label: 'Statut VIP local (phase de test)',
+          type: 'checkbox',
+          checked: actions.localVipEnabled,
+          click: (item) => actions.toggleLocalVip(item.checked),
+        },
+        {
           label: 'DNS sécurisé (contourne le filtrage du fournisseur d’accès)',
           type: 'checkbox',
           checked: actions.secureDnsEnabled,

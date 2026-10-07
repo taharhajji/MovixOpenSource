@@ -31,6 +31,14 @@ Tant que l'app n'est pas publiée, **toutes les pubs sont bloquées par défaut*
 
 Jamais bloqués : le site et ses miroirs, l'hôte imposé, l'API, TMDB, l'OAuth Discord/Google, Turnstile, les résolveurs de miroirs, les hébergeurs vidéo connus de l'extension, les flux média et WebSockets, et toutes les requêtes émises par l'extension (`GM_xmlhttpRequest`) — comme Tampermonkey échappe à uBlock.
 
+## Statut VIP local (phase de test)
+
+Le site lit son statut VIP dans `localStorage` (`is_vip`) et le révoque dès que la vérification serveur échoue ou qu'aucun code n'est saisi. L'app épingle cette clé à `true` (lecture forcée, écriture et suppression ignorées) avant tout script du site : le compte connecté est traité comme VIP côté interface — pas de popup pub, sources, réglages et badges VIP visibles.
+
+Limite : ce qui est servi **par l'API** uniquement aux vrais codes (en-tête `x-access-key`, par exemple certains flux premium ou le téléchargement) reste soumis à un code valide, qui vit dans la table `access_keys` de la base MySQL (voir `API/Mainapi/checkVip.js`). Pour un vrai VIP, insérer un code en base puis le saisir dans les réglages du site ; l'app n'en a pas besoin pour le reste.
+
+Menu Orbit › « Statut VIP local », `--local-vip=off` ou `MOVIX_LOCAL_VIP=0` pour le couper. **À passer à `false` (`DEFAULTS.localVip`) avant publication.**
+
 ## DNS sécurisé (contournement du filtrage FAI)
 
 Même rôle que le DNS 1.1.1.1 de l'app mobile : la résolution DNS de toute l'app passe en DNS-over-HTTPS (Cloudflare, Google, Quad9 en secours). Les fournisseurs d'accès qui filtrent des hébergeurs vidéo en détournant leur DNS (symptômes : `ERR_CERT_AUTHORITY_INVALID`, `ERR_CONNECTION_RESET` sur Veev, VOE, DoodStream…) sont contournés. Actif par défaut ; menu Orbit › « DNS sécurisé », `--secure-dns=off` ou `MOVIX_SECURE_DNS=0` pour le couper. Un blocage par inspection de paquets (DPI) n'est pas contourné : il faut alors un VPN.

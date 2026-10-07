@@ -1,8 +1,8 @@
 version: 1.0.0
 files:
   - url: https://github.com/movixstream/MovixOpenSource/releases/download/desktop-v1.0.0/Orbit-Setup-1.0.0.exe
-    sha512: 9qP+JI4NUXoMiW1Gk7uNisPrbFDNzc7R9FGLutGEBGbicFC+hLS33ZvntIbobUAjMhlqL2Tg1hJoSAum9pcUSg==
-    size: 81465176
+    sha512: iMw+yre/ylrNCr5TH9ZD1M2kXS1sOjyKEVgoZGqAENcJD57/w5oTxaXozltpQVFlMm/y87YvdGeqqYN3uTEjyg==
+    size: 81466130
 path: https://github.com/movixstream/MovixOpenSource/releases/download/desktop-v1.0.0/Orbit-Setup-1.0.0.exe
-sha512: 9qP+JI4NUXoMiW1Gk7uNisPrbFDNzc7R9FGLutGEBGbicFC+hLS33ZvntIbobUAjMhlqL2Tg1hJoSAum9pcUSg==
-releaseDate: '2026-10-07T13:26:55.045Z'
+sha512: iMw+yre/ylrNCr5TH9ZD1M2kXS1sOjyKEVgoZGqAENcJD57/w5oTxaXozltpQVFlMm/y87YvdGeqqYN3uTEjyg==
+releaseDate: '2026-10-07T13:45:38.459Z'
