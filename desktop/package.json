@@ -91,7 +91,7 @@
     ],
     "mac": {
       "category": "public.app-category.entertainment",
-      "icon": "build/icon.png",
+      "icon": "build/icon.icns",
       "identity": null,
       "hardenedRuntime": false,
       "gatekeeperAssess": false,

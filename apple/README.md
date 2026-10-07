@@ -1,5 +1,9 @@
 # MEWFLIX — versions macOS et iOS
 
+> **Décision du 7 octobre 2026 : la version iOS est abandonnée au profit de la version web** ([`web/`](../web/README.md)), qui s'ouvre dans Safari/Chrome sur mobile et s'ajoute à l'écran d'accueil. Le dossier `ios/` reste disponible si l'idée revient, mais n'est plus maintenu.
+>
+> **macOS** se construit aussi depuis Linux (WSL ou CI Ubuntu) avec `desktop/scripts/build-mac-wsl.sh` : cible `zip` uniquement (le DMG exige `sips`, outil macOS). Les archives produites ici : `desktop/dist-mac/`.
+
 Ce dossier regroupe tout ce qu'il faut pour produire MEWFLIX sur les plateformes Apple. Un point à savoir avant tout : **Apple impose un Mac pour compiler** (Xcode pour iOS, et le `.app` macOS d'Electron contient des liens symboliques que Windows ne sait pas créer). Rien ici ne se construit depuis Windows ; tout se construit en un clic sur un Mac, ou automatiquement par GitHub Actions sur un runner macOS.
 
 | Plateforme | Base | Comment la produire | Résultat |

@@ -71,7 +71,8 @@ Ce n'est pas un simple duo "frontend + backend". Une feature peut très vite tra
 | `extension/` + `userscript/` | Outils navigateur Movix | [Movix OS](README_MOVIX_OS.md) |
 | `app/` | App mobile React Native (Android OK, iOS non testé) | [App mobile](app/README.md) |
 | `desktop/` | App de bureau Windows/macOS (Electron) : site live + extension intégrée | [App de bureau](desktop/README.md) |
-| `apple/` | Versions macOS et iOS de l'app de bureau (build sur Mac ou GitHub Actions) | [macOS / iOS](apple/README.md) |
+| `apple/` | Version macOS de l'app de bureau (build sur Mac, Linux/WSL ou GitHub Actions) | [macOS](apple/README.md) |
+| `web/` | Version web MEWFLIX (mobile et bureau dans le navigateur) : front compilé + relais d'API, pour Vercel | [Web](web/README.md) |
 | `wasm/watchparty-sync/` | Moteur Rust/WASM de la Sync Pro | [WatchParty Sync WASM](wasm/watchparty-sync/README.md) |
 | `cloudflareproxy/` | Worker Cloudflare CORS/proxy | [Cloudflare Proxy](cloudflareproxy/README.md) |
 

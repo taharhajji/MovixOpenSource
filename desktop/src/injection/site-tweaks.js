@@ -102,8 +102,18 @@ function buildHideBranding() {
       }
     }
 
+    // Le titre du document est réécrit par le site à chaque page (« Accueil -
+    // Movix ») : on y remplace la marque aussi.
+    function scrubTitle() {
+      try {
+        var t = document.title;
+        if (/movix/i.test(t)) document.title = t.replace(/movix/gi, APP_NAME);
+      } catch (e) {}
+    }
+
     function scrub() {
       addStyle();
+      scrubTitle();
       var roots = document.querySelectorAll('header, footer');
       for (var i = 0; i < roots.length; i++) scrubTextNodes(roots[i]);
     }
@@ -228,9 +238,43 @@ function buildSwiftfluxDemotion(mode) {
 `;
 }
 
+function buildPopupNeutralizer(safeHosts) {
+  return `
+  // --- Popups vers l'extérieur neutralisés (version web, sans pont natif) -------
+  // Les régies ouvrent leurs liens par window.open : hors du site et des hôtes
+  // sûrs (support, réseaux), la page reçoit une fenêtre factice et rien ne
+  // s'ouvre. Les flux « voir une pub » se valident sans pub.
+  (function neutralizeExternalPopups() {
+    var SAFE = ${JSON.stringify(safeHosts)};
+    function safeHost(hostname) {
+      hostname = String(hostname || '').toLowerCase();
+      for (var i = 0; i < SAFE.length; i++) {
+        if (hostname === SAFE[i] || hostname.slice(-SAFE[i].length - 1) === '.' + SAFE[i]) return true;
+      }
+      return false;
+    }
+    var nativeOpen = typeof window.open === 'function' ? window.open.bind(window) : null;
+    window.open = function(url, target, features) {
+      try {
+        var absolute = new URL(String(url == null ? '' : url), location.href);
+        if ((absolute.protocol === 'http:' || absolute.protocol === 'https:')
+            && absolute.origin !== location.origin && !safeHost(absolute.hostname)) {
+          var fake = { closed: false, close: function() { fake.closed = true; }, focus: function() {}, blur: function() {},
+            postMessage: function() {}, location: { href: absolute.href }, opener: null };
+          return fake;
+        }
+      } catch (e) {}
+      return nativeOpen ? nativeOpen(url, target, features) : null;
+    };
+  })();
+`;
+}
+
 /**
  * @param {object} options
  * @param {string} options.appName
+ * @param {string[]|null} [options.popupSafeHosts]  hôtes externes autorisés par window.open ;
+ *   fourni, les autres popups externes sont neutralisés (version web)
  * @param {string} [options.accent]
  * @param {boolean} [options.hideSiteBranding]
  * @param {boolean} [options.localVip]
@@ -247,6 +291,7 @@ function buildSiteTweaks({
   adPopupAutoExpr = null,
   swiftfluxSource = 'keep',
   storagePrefix = 'orbit_desktop',
+  popupSafeHosts = null,
 } = {}) {
   const parts = [];
   parts.push(`
@@ -261,6 +306,7 @@ function buildSiteTweaks({
   // bloc restaure alors le réglage précédent s'il avait été forcé.
   if (adPopupAutoExpr != null) parts.push(buildAdPopupAuto(adPopupAutoExpr, storagePrefix));
   if (swiftfluxSource === 'last' || swiftfluxSource === 'off') parts.push(buildSwiftfluxDemotion(swiftfluxSource));
+  if (Array.isArray(popupSafeHosts)) parts.push(buildPopupNeutralizer(popupSafeHosts));
   parts.push(`
 })();
 `);

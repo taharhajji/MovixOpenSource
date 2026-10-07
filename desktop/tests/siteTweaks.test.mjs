@@ -96,6 +96,20 @@ test('popup pub : mode auto forcé et restauré selon l’expression', () => {
   assert.equal(off.store.has('p:ad_popup_forced'), false);
 });
 
+test('popups externes neutralisés (web) : hôtes sûrs et même origine passent, le reste reçoit une fenêtre factice', () => {
+  const opened = [];
+  const code = buildSiteTweaks({ appName: 'X', popupSafeHosts: ['t.me', 'github.com'] });
+  const { window } = runInFakePage(code, { extraGlobals: { location: { href: 'https://mewflix-app.vercel.app/', origin: 'https://mewflix-app.vercel.app' }, URL } });
+  // runInFakePage n'expose pas window.open : on rejoue le bloc sur un faux window.
+  const fakeWin = { open: (u) => { opened.push(u); return { real: true }; }, localStorage: window.localStorage, document: window.document, addEventListener() {} };
+  const fn = new Function('window', 'location', 'URL', 'Storage', 'localStorage', 'document', 'console', 'Date', 'JSON', 'Math', code);
+  fn(fakeWin, { href: 'https://mewflix-app.vercel.app/', origin: 'https://mewflix-app.vercel.app' }, URL, class {}, window.localStorage, window.document, console, Date, JSON, Math);
+  assert.equal(fakeWin.open('https://ads.example/go').real, undefined, 'régie : fenêtre factice');
+  assert.equal(fakeWin.open('https://t.me/movix_site').real, true, 'hôte sûr : ouverture réelle');
+  assert.equal(fakeWin.open('/film/1').real, true, 'même origine : ouverture réelle');
+  assert.deepEqual(opened, ['https://t.me/movix_site', '/film/1']);
+});
+
 test('VIP local : la clé is_vip est épinglée à true', () => {
   const { window } = runInFakePage(buildSiteTweaks({ appName: 'X', localVip: true }));
   window.localStorage.removeItem('is_vip');

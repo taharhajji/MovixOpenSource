@@ -1,0 +1,14 @@
+{
+  "name": "mewflix-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MEWFLIX version web (mobile et bureau dans le navigateur) : front Movix compilé, API relayée, déployé sur Vercel.",
+  "scripts": {
+    "build:web": "node scripts/build.mjs",
+    "build:static": "node scripts/build.mjs --skip-vite",
+    "serve": "node scripts/serve-local.mjs",
+    "deploy": "vercel deploy --prod",
+    "deploy:preview": "vercel deploy"
+  }
+}
