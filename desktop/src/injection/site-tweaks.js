@@ -140,18 +140,88 @@ function buildHideBranding() {
       }
     }
 
+    // Dons : liens vers la page de don et boutons « Faire un don / Soutenir / Donner ».
+    var DONATE_RE = /^(faire un don|donner|soutenir(\\s+\\S+)?|make a donation|donate|support(\\s+\\S+)?)$/i;
+    // Boutons communautaires sans lien (« Canal Telegram (t.me/…) », « Rejoindre Discord »…).
+    var COMMUNITY_RE = /telegram|t\.me\\/|discord/i;
+    function hideDonations() {
+      var nodes = document.querySelectorAll('a[href*="/vip/don"], a[href*="/don"], a, button');
+      for (var i = 0; i < nodes.length; i++) {
+        var el = nodes[i];
+        if (el.getAttribute('data-orbit-hidden')) continue;
+        var href = el.getAttribute('href') || '';
+        var text = (el.textContent || '').replace(/\\s+/g, ' ').trim();
+        if (/\\/vip\\/don/.test(href) || DONATE_RE.test(text) || (el.tagName === 'BUTTON' && COMMUNITY_RE.test(text))) {
+          el.style.setProperty('display', 'none', 'important');
+          el.setAttribute('data-orbit-hidden', '1');
+        }
+      }
+    }
+
+    // Page « À propos » : le récit du site est remplacé par une seule ligne.
+    var ABOUT_TEXT = ${JSON.stringify('Fait par Tahar le super bg')};
+    function overrideAbout() {
+      if (location.pathname.replace(/\\/+$/, '') !== '/about') return;
+      var containers = document.querySelectorAll('.container.mx-auto');
+      for (var i = 0; i < containers.length; i++) {
+        var c = containers[i];
+        if (c.closest('header, footer')) continue;
+        if (c.querySelector('.orbit-about')) return;
+        if (!c.querySelector('a[href="/"]')) continue;
+        c.innerHTML = '<div class="orbit-about" style="min-height:70vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:20px;padding:40px 16px">'
+          + '<div style="font-size:2rem;font-weight:800;letter-spacing:0.12em;color:' + ACCENT + '">' + APP_NAME.toUpperCase() + '</div>'
+          + '<div style="font-size:1.25rem;color:#fff">' + ABOUT_TEXT + '</div>'
+          + '<a href="/" style="margin-top:12px;color:' + ACCENT + ';text-decoration:underline">Retour à l’accueil</a>'
+          + '</div>';
+        return;
+      }
+    }
+
     function scrub() {
       addStyle();
       scrubTitle();
       placeWordmark();
+      hideDonations();
+      overrideAbout();
       var roots = document.querySelectorAll('header, footer');
       for (var i = 0; i < roots.length; i++) scrubTextNodes(roots[i]);
+    }
+
+    // Reste de la page (textes des pages VIP, aide, conditions…) : passe différée
+    // au prochain frame, une seule par rafale de mutations, header/footer exclus.
+    var bodyPassPending = false;
+    function scrubBodyText() {
+      bodyPassPending = false;
+      if (!document.body) return;
+      var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+        acceptNode: function(node) {
+          var p = node.parentElement;
+          if (!p || p.closest('header, footer, script, style, textarea, input')) return NodeFilter.FILTER_REJECT;
+          return BRAND_ANY_RE.test(node.nodeValue || '') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+        }
+      });
+      var node;
+      while ((node = walker.nextNode())) {
+        BRAND_ANY_RE.lastIndex = 0;
+        node.nodeValue = node.nodeValue.replace(BRAND_ANY_RE, APP_NAME);
+      }
+      BRAND_ANY_RE.lastIndex = 0;
+    }
+    function scheduleBodyPass() {
+      if (bodyPassPending) return;
+      bodyPassPending = true;
+      // rAF ne tourne pas dans un onglet en arrière-plan : un minuteur prend le relais.
+      var done = false;
+      var run = function() { if (done) return; done = true; scrubBodyText(); };
+      requestAnimationFrame(run);
+      setTimeout(run, 80);
     }
 
     function schedule() {
       if (scheduled) return;
       scheduled = true;
       try { scrub(); } finally { scheduled = false; }
+      scheduleBodyPass();
     }
 
     if (!addStyle()) {
@@ -161,6 +231,7 @@ function buildHideBranding() {
     }
     var start = function() {
       scrub();
+      scheduleBodyPass();
       new MutationObserver(schedule).observe(document.documentElement, {
         childList: true, subtree: true, characterData: true
       });
