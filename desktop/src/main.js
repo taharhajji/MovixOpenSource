@@ -693,7 +693,7 @@ function bootstrap() {
               // Laisse 1,5 s au remplacement après l'apparition du header.
               if (!/movix/i.test(text) || Date.now() - firstSeenAt > 1500) return done(text);
             }
-            if (Date.now() - started > 12000) return done(text || null);
+            if (Date.now() - started > 20000) return done(text || null);
             setTimeout(poll, 100);
           })();
         });

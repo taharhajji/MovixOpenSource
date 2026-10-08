@@ -1,8 +1,8 @@
 version: 1.0.0
 files:
   - url: https://github.com/movixstream/MovixOpenSource/releases/download/desktop-v1.0.0/MEWFLIX-Setup-1.0.0.exe
-    sha512: 2zjXch26lbWtnbxGg1DQjngLOiJnKdST4I/guN01eyq9Iy5/GDgxgdVaH0fR5n/h6UQCmEz4no1UrQIONNDewA==
-    size: 82368951
+    sha512: qI5Z2jtqij3ejcgsYOTnUi5iZ7yoOe3pg3PFCDOzgDMTpa6M0kMkcfJr4azBUTnQi5XxwNy6EpvwHxBInZFk9g==
+    size: 82370066
 path: https://github.com/movixstream/MovixOpenSource/releases/download/desktop-v1.0.0/MEWFLIX-Setup-1.0.0.exe
-sha512: 2zjXch26lbWtnbxGg1DQjngLOiJnKdST4I/guN01eyq9Iy5/GDgxgdVaH0fR5n/h6UQCmEz4no1UrQIONNDewA==
-releaseDate: '2026-10-07T17:22:21.649Z'
+sha512: qI5Z2jtqij3ejcgsYOTnUi5iZ7yoOe3pg3PFCDOzgDMTpa6M0kMkcfJr4azBUTnQi5XxwNy6EpvwHxBInZFk9g==
+releaseDate: '2026-10-08T23:07:26.195Z'

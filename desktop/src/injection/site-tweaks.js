@@ -73,7 +73,13 @@ function buildHideBranding() {
   // et du footer remplacé par le nom de l'app, rejoué dans le callback du
   // MutationObserver (microtâche, avant le rendu : aucun flash).
   (function hideSiteBranding() {
-    var CSS = 'img[src*="/movix"], img[alt*="movix" i], .bb-logo { display: none !important; }';
+    // Le logo du site est tantôt un texte « MOVIX », tantôt un SVG
+    // (span[data-movix-logo] > svg[aria-label="Movix"]) : les deux sont traités.
+    var CSS = [
+      'img[src*="/movix"], img[alt*="movix" i], .bb-logo { display: none !important; }',
+      '[data-movix-logo], svg[aria-label*="movix" i] { display: none !important; }',
+      '.orbit-brand { display: inline-flex; align-items: center; font-weight: 800; letter-spacing: 0.08em; font-size: 1.5rem; line-height: 1; color: ' + ACCENT + '; }',
+    ].join('\\n');
     var BRAND_RE = /^(\\s*)movix(\\s*)$/i;
     var BRAND_ANY_RE = /movix/gi;
     var scheduled = false;
@@ -120,9 +126,24 @@ function buildHideBranding() {
       } catch (e) {}
     }
 
+    // Logo SVG : le lien du logo reçoit le nom de l'app en texte, une seule fois.
+    function placeWordmark() {
+      var links = document.querySelectorAll('header a[href="/"], footer a[href="/"]');
+      for (var i = 0; i < links.length; i++) {
+        var link = links[i];
+        if (!link.querySelector('[data-movix-logo], svg[aria-label*="movix" i]')) continue;
+        if (link.querySelector('.orbit-brand')) continue;
+        var mark = document.createElement('span');
+        mark.className = 'orbit-brand';
+        mark.textContent = APP_NAME.toUpperCase();
+        link.appendChild(mark);
+      }
+    }
+
     function scrub() {
       addStyle();
       scrubTitle();
+      placeWordmark();
       var roots = document.querySelectorAll('header, footer');
       for (var i = 0; i < roots.length; i++) scrubTextNodes(roots[i]);
     }
