@@ -18,7 +18,7 @@ const UPSTREAM = (process.env.UPSTREAM_API || 'https://api.movix.luxe').replace(
 
 const DROP_REQUEST_HEADERS = new Set([
   'host', 'origin', 'referer', 'connection', 'content-length', 'accept-encoding',
-  'cf-connecting-ip', 'cf-ray', 'cf-visitor', 'cf-ipcountry', 'true-client-ip', 'x-real-ip',
+  'cf-connecting-ip', 'cf-ray', 'cf-visitor', 'cf-ipcountry', 'true-client-ip',
 ]);
 const DROP_RESPONSE_HEADERS = new Set([
   'access-control-allow-origin', 'access-control-allow-credentials', 'access-control-allow-headers',
@@ -42,6 +42,15 @@ export default async function handler(request) {
     const key = name.toLowerCase();
     if (DROP_REQUEST_HEADERS.has(key) || key.startsWith('x-vercel-') || key.startsWith('x-forwarded-')) continue;
     headers.set(name, value);
+  }
+  // Adresse IP du spectateur : certains flux résolus par l'API sont liés à
+  // l'IP du client qui les demande. Sans cela, l'API verrait l'IP du relais et
+  // le navigateur recevrait des URL valables pour une autre adresse.
+  const clientIp = (request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || '').split(',')[0].trim();
+  if (clientIp) {
+    headers.set('x-forwarded-for', clientIp);
+    headers.set('x-real-ip', clientIp);
+    headers.set('true-client-ip', clientIp);
   }
   // L'API classe les sessions par User-Agent : on signale le client web MEWFLIX
   // sans masquer le navigateur réel.
