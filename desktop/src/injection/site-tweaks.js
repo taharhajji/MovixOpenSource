@@ -305,6 +305,89 @@ function buildCommunityLinksHiding() {
 `;
 }
 
+function buildIframeSandbox(exemptHosts) {
+  return `
+  // --- Lecteurs en iframe : bac à sable -------------------------------------------
+  // Les lecteurs tiers (DoodStream, FStream, Wiflix…) ouvrent des popups
+  // (window.open) ou redirigent la page parente (top.location) vers des régies.
+  // Un iframe en bac à sable sans allow-popups ni allow-top-navigation en est
+  // incapable, au niveau du navigateur. allow-scripts + allow-same-origin
+  // laissent le lecteur fonctionner normalement. Les iframes du site lui-même
+  // et quelques services (Turnstile, YouTube) sont exemptés.
+  (function sandboxEmbeds() {
+    if (typeof HTMLIFrameElement === 'undefined' || typeof Element === 'undefined') return;
+    var SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-presentation allow-orientation-lock allow-pointer-lock';
+    var EXEMPT = ${JSON.stringify(exemptHosts)};
+    var MARK = 'data-orbit-sandbox';
+    function exempt(hostname) {
+      for (var i = 0; i < EXEMPT.length; i++) {
+        if (hostname === EXEMPT[i] || hostname.slice(-EXEMPT[i].length - 1) === '.' + EXEMPT[i]) return true;
+      }
+      return false;
+    }
+    function shouldSandbox(src) {
+      try {
+        var u = new URL(String(src || ''), location.href);
+        if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+        if (u.origin === location.origin) return false;
+        return !exempt(u.hostname);
+      } catch (e) { return false; }
+    }
+    var rawSetAttribute = Element.prototype.setAttribute;
+    var rawRemoveAttribute = Element.prototype.removeAttribute;
+    function reconcile(frame, src) {
+      if (shouldSandbox(src)) {
+        if (!frame.hasAttribute('sandbox')) {
+          rawSetAttribute.call(frame, 'sandbox', SANDBOX);
+          rawSetAttribute.call(frame, MARK, '1');
+        }
+      } else if (frame.getAttribute(MARK) === '1') {
+        rawRemoveAttribute.call(frame, 'sandbox');
+        rawRemoveAttribute.call(frame, MARK);
+      }
+    }
+    // src posé avant chargement : propriété et attribut interceptés.
+    var desc = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'src');
+    if (desc && desc.set) {
+      Object.defineProperty(HTMLIFrameElement.prototype, 'src', {
+        configurable: true,
+        enumerable: desc.enumerable,
+        get: desc.get,
+        set: function(value) { reconcile(this, value); return desc.set.call(this, value); }
+      });
+    }
+    Element.prototype.setAttribute = function(name, value) {
+      if (this.tagName === 'IFRAME' && String(name).toLowerCase() === 'src') reconcile(this, value);
+      return rawSetAttribute.apply(this, arguments);
+    };
+    // iframes insérés déjà chargés (innerHTML) : bac à sable puis rechargement.
+    function sweep(root) {
+      var frames = root.tagName === 'IFRAME' ? [root] : (root.querySelectorAll ? root.querySelectorAll('iframe') : []);
+      for (var i = 0; i < frames.length; i++) {
+        var f = frames[i];
+        var src = f.getAttribute('src') || '';
+        if (src && shouldSandbox(src) && !f.hasAttribute('sandbox')) {
+          rawSetAttribute.call(f, 'sandbox', SANDBOX);
+          rawSetAttribute.call(f, MARK, '1');
+          rawSetAttribute.call(f, 'src', src);
+        }
+      }
+    }
+    function start() {
+      sweep(document.documentElement);
+      new MutationObserver(function(mutations) {
+        for (var m = 0; m < mutations.length; m++) {
+          var added = mutations[m].addedNodes;
+          for (var n = 0; n < added.length; n++) if (added[n].nodeType === 1) sweep(added[n]);
+        }
+      }).observe(document.documentElement, { childList: true, subtree: true });
+    }
+    if (document.documentElement) start();
+    else document.addEventListener('DOMContentLoaded', start, { once: true });
+  })();
+`;
+}
+
 function buildPopupNeutralizer(safeHosts) {
   return `
   // --- Popups vers l'extérieur neutralisés (version web, sans pont natif) -------
@@ -320,19 +403,37 @@ function buildPopupNeutralizer(safeHosts) {
       }
       return false;
     }
-    var nativeOpen = typeof window.open === 'function' ? window.open.bind(window) : null;
-    window.open = function(url, target, features) {
+    function external(url) {
       try {
         var absolute = new URL(String(url == null ? '' : url), location.href);
-        if ((absolute.protocol === 'http:' || absolute.protocol === 'https:')
-            && absolute.origin !== location.origin && !safeHost(absolute.hostname)) {
-          var fake = { closed: false, close: function() { fake.closed = true; }, focus: function() {}, blur: function() {},
-            postMessage: function() {}, location: { href: absolute.href }, opener: null };
-          return fake;
-        }
-      } catch (e) {}
+        return (absolute.protocol === 'http:' || absolute.protocol === 'https:')
+          && absolute.origin !== location.origin && !safeHost(absolute.hostname) ? absolute : null;
+      } catch (e) { return null; }
+    }
+    var nativeOpen = typeof window.open === 'function' ? window.open.bind(window) : null;
+    window.open = function(url, target, features) {
+      var absolute = external(url);
+      if (absolute) {
+        var fake = { closed: false, close: function() { fake.closed = true; }, focus: function() {}, blur: function() {},
+          postMessage: function() {}, location: { href: absolute.href }, opener: null };
+        return fake;
+      }
       return nativeOpen ? nativeOpen(url, target, features) : null;
     };
+    // Liens cliqués vers l'extérieur (régies posées en <a target="_blank">,
+    // redirections au clic sur un lecteur) : ignorés, sauf hôtes sûrs.
+    document.addEventListener('click', function(event) {
+      var anchor = event.target && event.target.closest ? event.target.closest('a[href]') : null;
+      if (!anchor) return;
+      if (external(anchor.getAttribute('href'))) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }, true);
+    document.addEventListener('auxclick', function(event) {
+      var anchor = event.target && event.target.closest ? event.target.closest('a[href]') : null;
+      if (anchor && external(anchor.getAttribute('href'))) event.preventDefault();
+    }, true);
   })();
 `;
 }
@@ -360,6 +461,8 @@ function buildSiteTweaks({
   storagePrefix = 'orbit_desktop',
   popupSafeHosts = null,
   hideCommunityLinks = hideSiteBranding,
+  sandboxEmbeds = true,
+  sandboxExemptHosts = ['challenges.cloudflare.com', 'youtube.com', 'youtube-nocookie.com', 'player.vimeo.com', 'accounts.google.com', 'discord.com'],
 } = {}) {
   const parts = [];
   parts.push(`
@@ -376,6 +479,7 @@ function buildSiteTweaks({
   if (adPopupAutoExpr != null) parts.push(buildAdPopupAuto(adPopupAutoExpr, storagePrefix));
   if (swiftfluxSource === 'last' || swiftfluxSource === 'off') parts.push(buildSwiftfluxDemotion(swiftfluxSource));
   if (Array.isArray(popupSafeHosts)) parts.push(buildPopupNeutralizer(popupSafeHosts));
+  if (sandboxEmbeds) parts.push(buildIframeSandbox(sandboxExemptHosts));
   parts.push(`
 })();
 `);
