@@ -75,6 +75,7 @@ function buildHideBranding() {
   (function hideSiteBranding() {
     var CSS = 'img[src*="/movix"], img[alt*="movix" i], .bb-logo { display: none !important; }';
     var BRAND_RE = /^(\\s*)movix(\\s*)$/i;
+    var BRAND_ANY_RE = /movix/gi;
     var scheduled = false;
 
     function addStyle() {
@@ -92,13 +93,21 @@ function buildHideBranding() {
       var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
       var node;
       while ((node = walker.nextNode())) {
-        var match = BRAND_RE.exec(node.nodeValue || '');
-        if (!match) continue;
-        var original = node.nodeValue.trim();
-        var replacement = original === original.toUpperCase() ? APP_NAME.toUpperCase() : APP_NAME;
-        node.nodeValue = match[1] + replacement + match[2];
-        var el = node.parentElement;
-        if (el && /text-red/.test(el.className || '')) el.style.color = ACCENT;
+        var value = node.nodeValue || '';
+        var match = BRAND_RE.exec(value);
+        if (match) {
+          // Logo texte seul : respecte la casse (MOVIX → MEWFLIX) et prend la couleur accent.
+          var original = value.trim();
+          var replacement = original === original.toUpperCase() ? APP_NAME.toUpperCase() : APP_NAME;
+          node.nodeValue = match[1] + replacement + match[2];
+          var el = node.parentElement;
+          if (el && /text-red/.test(el.className || '')) el.style.color = ACCENT;
+        } else if (BRAND_ANY_RE.test(value)) {
+          // Phrases du pied de page (« À propos de Movix », « © 2026 Movix ») : marque remplacée dans le texte.
+          BRAND_ANY_RE.lastIndex = 0;
+          node.nodeValue = value.replace(BRAND_ANY_RE, APP_NAME);
+        }
+        BRAND_ANY_RE.lastIndex = 0;
       }
     }
 
@@ -238,6 +247,43 @@ function buildSwiftfluxDemotion(mode) {
 `;
 }
 
+function buildCommunityLinksHiding() {
+  return `
+  // --- Liens communauté / développeurs masqués -----------------------------------
+  // Telegram, code source GitHub, liste des miroirs, bloc « Rejoignez la
+  // communauté », colonne « Communauté » du pied de page et section « Conçu
+  // avec » (technologies). Sélecteurs sur les href et la structure, rejoués
+  // par le navigateur lui-même (CSS), donc valables après chaque re-rendu.
+  (function hideCommunityLinks() {
+    var CSS = [
+      'a[href*="t.me/"], a[href*="telegram"], a[href*="github.com"], a[href*="movix.online"] { display: none !important; }',
+      'li:has(> a[href*="t.me/"]), li:has(> a[href*="telegram"]), li:has(> a[href*="github.com"]), li:has(> a[href*="movix.online"]) { display: none !important; }',
+      'footer nav > div:has(a[href*="t.me/"]) { display: none !important; }',
+      'section[aria-labelledby="footer-technologies"] { display: none !important; }',
+      'div:has(> div.grid > a[href*="t.me/"]) { display: none !important; }',
+      'a[href*="/extension"], li:has(> a[href*="/extension"]), a[href="/app"], li:has(> a[href="/app"]) { display: none !important; }',
+      // Pied de page : après le copyright, les lignes « développé avec… » et crédits.
+      'footer div.border-t > p:not(:first-child) { display: none !important; }',
+    ].join('\\n');
+    function addStyle() {
+      if (document.getElementById('orbit-community-links')) return true;
+      var parent = document.head || document.documentElement;
+      if (!parent) return false;
+      var style = document.createElement('style');
+      style.id = 'orbit-community-links';
+      style.textContent = CSS;
+      parent.appendChild(style);
+      return true;
+    }
+    if (!addStyle()) {
+      new MutationObserver(function(_m, observer) {
+        if (addStyle()) observer.disconnect();
+      }).observe(document, { childList: true });
+    }
+  })();
+`;
+}
+
 function buildPopupNeutralizer(safeHosts) {
   return `
   // --- Popups vers l'extérieur neutralisés (version web, sans pont natif) -------
@@ -292,6 +338,7 @@ function buildSiteTweaks({
   swiftfluxSource = 'keep',
   storagePrefix = 'orbit_desktop',
   popupSafeHosts = null,
+  hideCommunityLinks = hideSiteBranding,
 } = {}) {
   const parts = [];
   parts.push(`
@@ -302,6 +349,7 @@ function buildSiteTweaks({
 `);
   if (localVip) parts.push(buildLocalVip());
   if (hideSiteBranding) parts.push(buildHideBranding());
+  if (hideCommunityLinks) parts.push(buildCommunityLinksHiding());
   // Toujours inclus quand une expression est fournie, y compris 'false' : le
   // bloc restaure alors le réglage précédent s'il avait été forcé.
   if (adPopupAutoExpr != null) parts.push(buildAdPopupAuto(adPopupAutoExpr, storagePrefix));

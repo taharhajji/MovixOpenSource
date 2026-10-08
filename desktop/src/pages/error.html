@@ -26,7 +26,6 @@
     <p id="failure" hidden></p>
     <div class="actions">
       <button class="primary" id="retry">Réessayer</button>
-      <button id="support">Support</button>
     </div>
     <div class="meta" id="meta"></div>
   </div>
@@ -63,9 +62,6 @@
         this.disabled = true;
         this.textContent = 'Nouvel essai…';
         if (bridge.retry) bridge.retry();
-      });
-      document.getElementById('support').addEventListener('click', function () {
-        if (bridge.openExternal && status.telegramUrl) bridge.openExternal(status.telegramUrl);
       });
     })();
   </script>

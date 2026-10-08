@@ -563,8 +563,6 @@ function bootstrap() {
         `DNS sécurisé (DoH) : ${config.secureDnsEnabled ? 'actif' : 'désactivé'}`,
         `Statut VIP local : ${config.localVipEnabled ? 'actif' : 'désactivé'}`,
         `Electron ${process.versions.electron} · Chromium ${process.versions.chrome} · Node ${process.versions.node}`,
-        '',
-        BRAND.LICENSE_LINE,
       ].join('\n'),
       buttons: ['Fermer'],
     }).catch(() => {});

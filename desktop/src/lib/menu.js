@@ -105,10 +105,6 @@ function buildMenu(actions) {
       submenu: [
         { label: 'Vérifier les mises à jour', click: actions.checkUpdates },
         { type: 'separator' },
-        { label: 'Support', click: () => actions.openExternal(actions.telegramUrl) },
-        { label: 'Code source', click: () => actions.openExternal(actions.githubUrl) },
-        { label: 'Signaler un problème', click: () => actions.openExternal(`${actions.githubUrl}/issues`) },
-        { type: 'separator' },
         { label: `À propos de ${actions.appName}`, click: actions.about },
       ],
     },
