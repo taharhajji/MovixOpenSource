@@ -104,8 +104,12 @@ if (!ORIGIN) {
 
 // --- Icône et manifeste PWA ---------------------------------------------------
 cpSync(join(ROOT, 'desktop', 'build', 'icon.png'), join(DIST, 'mewflix-icon.png'));
-const manifestPath = join(DIST, 'manifest.json');
+// Vite publie le manifeste sous un nom haché (assets/manifest-<hash>.json),
+// référencé par <link rel="manifest"> dans index.html.
+const manifestMatch = /<link rel="manifest" href="\/([^"]+)"/.exec(readFileSync(join(DIST, 'index.html'), 'utf8'));
+const manifestPath = join(DIST, manifestMatch ? manifestMatch[1] : 'manifest.json');
 if (existsSync(manifestPath)) {
+  console.log(`[web] manifeste PWA : ${manifestMatch ? manifestMatch[1] : 'manifest.json'}`);
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   manifest.name = BRAND.APP_NAME;
   manifest.short_name = BRAND.APP_NAME;

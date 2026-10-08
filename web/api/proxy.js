@@ -1,5 +1,6 @@
 /**
- * Relais Edge vers l'API Movix.
+ * Relais Edge vers l'API Movix (fichier api/proxy.js, atteint par la réécriture
+ * /api/:path* de vercel.json).
  *
  * L'API n'accepte que les origines Movix (middleware CORS) : un site servi
  * depuis un autre domaine ne peut pas l'appeler directement depuis le
@@ -27,7 +28,14 @@ const DROP_RESPONSE_HEADERS = new Set([
 
 export default async function handler(request) {
   const url = new URL(request.url);
-  const target = `${UPSTREAM}${url.pathname}${url.search}`;
+  // Réécriture vercel.json : /api/:path* → /api/proxy?path=:path* (une route
+  // « attrape-tout » [...path] ne couvrait qu'un segment). Le chemin d'origine
+  // arrive dans `path`, les autres paramètres sont transmis tels quels.
+  const params = new URLSearchParams(url.search);
+  const apiPath = params.get('path') || '';
+  params.delete('path');
+  const query = params.toString();
+  const target = `${UPSTREAM}/api/${apiPath}${query ? `?${query}` : ''}`;
 
   const headers = new Headers();
   for (const [name, value] of request.headers) {

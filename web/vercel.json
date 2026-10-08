@@ -6,6 +6,10 @@
   "trailingSlash": false,
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "/api/proxy?path=:path*"
+    },
+    {
       "source": "/avatars/:path*",
       "destination": "https://movix.luxe/avatars/:path*"
     },
