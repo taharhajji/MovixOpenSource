@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { buildSiteTweaks, DEFAULT_TOP_LEVEL_ORDER } = require('../src/injection/site-tweaks.js');
+const { buildSiteTweaks, DEFAULT_TOP_LEVEL_ORDER, EMBED_SOURCE_IDS } = require('../src/injection/site-tweaks.js');
 const { buildInjectedJavaScript } = require('../src/injection/bridge-runtime.js');
 
 /** Exécute le code des retouches dans un faux navigateur minimal. */
@@ -116,4 +116,25 @@ test('VIP local : la clé is_vip est épinglée à true', () => {
   window.localStorage.setItem('is_vip', 'false');
   assert.equal(window.localStorage.getItem('is_vip'), 'true');
   assert.equal(window.__ORBIT_LOCAL_VIP__, true);
+});
+
+test('lecteurs embed désactivés : ordre par défaut, une seule fois, dernier lecteur embed oublié', () => {
+  const { store } = runInFakePage(buildSiteTweaks({ appName: 'X', swiftfluxSource: 'last', disableEmbedSources: true, storagePrefix: 'w' }), {
+    storage: { playerLastId: 'omega_0' },
+  });
+  const order = JSON.parse(store.get('settings_source_priority_prefs')).categories.moviesTv.sourceOrder;
+  for (const entry of order) {
+    assert.equal(entry.enabled, !EMBED_SOURCE_IDS.includes(entry.id), `source ${entry.id}`);
+  }
+  assert.equal(store.get('w:embeds_off'), '1');
+  assert.equal(store.get('playerLastId'), undefined);
+
+  // Réactivation manuelle par l'utilisateur : respectée au chargement suivant.
+  const prefs = JSON.parse(store.get('settings_source_priority_prefs'));
+  prefs.categories.moviesTv.sourceOrder.find((e) => e.id === 'omega').enabled = true;
+  const again = runInFakePage(buildSiteTweaks({ appName: 'X', swiftfluxSource: 'last', disableEmbedSources: true, storagePrefix: 'w' }), {
+    storage: { settings_source_priority_prefs: JSON.stringify(prefs), 'w:embeds_off': '1' },
+  });
+  const omega = JSON.parse(again.store.get('settings_source_priority_prefs')).categories.moviesTv.sourceOrder.find((e) => e.id === 'omega');
+  assert.equal(omega.enabled, true);
 });
