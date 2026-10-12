@@ -6,6 +6,14 @@
   "trailingSlash": false,
   "rewrites": [
     {
+      "source": "/media/:name*",
+      "destination": "/api/media"
+    },
+    {
+      "source": "/media",
+      "destination": "/api/media"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api/proxy?path=:path*"
     },
@@ -14,7 +22,7 @@
       "destination": "https://movix.luxe/avatars/:path*"
     },
     {
-      "source": "/((?!api/|avatars/).*)",
+      "source": "/((?!api/|avatars/|media/|media$).*)",
       "destination": "/index.html"
     }
   ],
@@ -52,6 +60,15 @@
         {
           "key": "Cache-Control",
           "value": "public, max-age=604800"
+        }
+      ]
+    },
+    {
+      "source": "/media/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
         }
       ]
     }

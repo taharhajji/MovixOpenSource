@@ -509,6 +509,83 @@ function buildPopupNeutralizer(safeHosts) {
 `;
 }
 
+function buildMediaRelay(relayPath, hosts) {
+  return `
+  // --- Relais média (version web) -------------------------------------------
+  // Le CDN de certaines sources HLS refuse les requêtes dont l'Origin n'est pas
+  // un domaine Movix (403). Pour ces hôtes, chaque requête du lecteur (XHR de
+  // hls.js, fetch, src natif <video>) est détournée vers le relais du site,
+  // qui va chercher le flux sans Origin et réécrit les playlists.
+  (function relayBlockedMedia() {
+    var RELAY = ${JSON.stringify(String(relayPath))};
+    var HOSTS = ${JSON.stringify(hosts)};
+    function hostMatch(hostname) {
+      hostname = String(hostname || '').toLowerCase();
+      for (var i = 0; i < HOSTS.length; i++) {
+        if (hostname === HOSTS[i] || hostname.slice(-HOSTS[i].length - 1) === '.' + HOSTS[i]) return true;
+      }
+      return false;
+    }
+    function relayed(url) {
+      if (url == null) return null;
+      try {
+        var absolute = new URL(String(url), location.href);
+        if (absolute.origin === location.origin) return null;
+        if (absolute.protocol !== 'http:' && absolute.protocol !== 'https:') return null;
+        if (!hostMatch(absolute.hostname)) return null;
+        var segments = absolute.pathname.split('/');
+        var name = segments[segments.length - 1] || 'media';
+        return location.origin + RELAY + '/' + encodeURIComponent(name) + '?u=' + encodeURIComponent(absolute.href);
+      } catch (e) { return null; }
+    }
+    window.__orbitRelayMediaUrl = relayed;
+    var xhrOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url) {
+      var target = relayed(url);
+      if (target) {
+        var args = Array.prototype.slice.call(arguments);
+        args[1] = target;
+        return xhrOpen.apply(this, args);
+      }
+      return xhrOpen.apply(this, arguments);
+    };
+    if (typeof window.fetch === 'function') {
+      var nativeFetch = window.fetch;
+      window.fetch = function(input, init) {
+        var url = typeof input === 'string' ? input : (input && typeof input.href === 'string' ? input.href : (input && input.url));
+        var target = relayed(url);
+        if (target) {
+          input = (typeof input === 'object' && input && typeof input.url === 'string' && !(input instanceof URL))
+            ? new Request(target, input) : target;
+        }
+        return nativeFetch.call(window, input, init);
+      };
+    }
+    function wrapSrc(proto) {
+      if (!proto) return;
+      var desc = Object.getOwnPropertyDescriptor(proto, 'src');
+      if (!desc || !desc.set) return;
+      Object.defineProperty(proto, 'src', {
+        configurable: true, enumerable: desc.enumerable, get: desc.get,
+        set: function(value) { desc.set.call(this, relayed(value) || value); }
+      });
+    }
+    if (typeof HTMLMediaElement !== 'undefined') wrapSrc(HTMLMediaElement.prototype);
+    if (typeof HTMLSourceElement !== 'undefined') wrapSrc(HTMLSourceElement.prototype);
+    var setAttribute = Element.prototype.setAttribute;
+    Element.prototype.setAttribute = function(name, value) {
+      if (String(name).toLowerCase() === 'src'
+          && ((typeof HTMLMediaElement !== 'undefined' && this instanceof HTMLMediaElement)
+            || (typeof HTMLSourceElement !== 'undefined' && this instanceof HTMLSourceElement))) {
+        var target = relayed(value);
+        if (target) value = target;
+      }
+      return setAttribute.call(this, name, value);
+    };
+  })();
+`;
+}
+
 /**
  * @param {object} options
  * @param {string} options.appName
@@ -520,6 +597,8 @@ function buildPopupNeutralizer(safeHosts) {
  * @param {string} [options.adPopupAutoExpr]  expression JS ('true', 'false' ou dynamique)
  * @param {'last'|'off'|'keep'} [options.swiftfluxSource]
  * @param {string} [options.storagePrefix]
+ * @param {{path: string, hosts: string[]}|null} [options.mediaRelay]  relais /media du site web
+ *   pour les hôtes HLS qui refusent l'Origin du site (null = aucun)
  * @returns {string} code JS à exécuter dans la page avant ses scripts
  */
 function buildSiteTweaks({
@@ -533,6 +612,7 @@ function buildSiteTweaks({
   popupSafeHosts = null,
   hideCommunityLinks = hideSiteBranding,
   sandboxEmbeds = true,
+  mediaRelay = null,
   sandboxExemptHosts = ['challenges.cloudflare.com', 'youtube.com', 'youtube-nocookie.com', 'player.vimeo.com', 'accounts.google.com', 'discord.com'],
 } = {}) {
   const parts = [];
@@ -551,6 +631,9 @@ function buildSiteTweaks({
   if (swiftfluxSource === 'last' || swiftfluxSource === 'off') parts.push(buildSwiftfluxDemotion(swiftfluxSource));
   if (Array.isArray(popupSafeHosts)) parts.push(buildPopupNeutralizer(popupSafeHosts));
   if (sandboxEmbeds) parts.push(buildIframeSandbox(sandboxExemptHosts));
+  if (mediaRelay && mediaRelay.path && Array.isArray(mediaRelay.hosts) && mediaRelay.hosts.length) {
+    parts.push(buildMediaRelay(mediaRelay.path, mediaRelay.hosts));
+  }
   parts.push(`
 })();
 `);

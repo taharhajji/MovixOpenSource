@@ -14,6 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEFAULT_RELAY_HOSTS, RELAY_PATH } from '../api/media.js';
 
 const require = createRequire(import.meta.url);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -155,6 +156,7 @@ const tweaks = buildSiteTweaks({
   swiftfluxSource: 'last',
   storagePrefix: 'mewflix_web',
   popupSafeHosts: SAFE_EXTERNAL_HOSTS,
+  mediaRelay: { path: RELAY_PATH, hosts: DEFAULT_RELAY_HOSTS },
 });
 const tweaksTag = `<script id="mewflix-site-tweaks">${tweaks.replace(/<\/script/gi, '<\\/script')}</script>`;
 if (!/<script id="mewflix-site-tweaks">/.test(html)) {

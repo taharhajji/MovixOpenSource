@@ -47,3 +47,17 @@ npx vercel deploy --prod  # projet « mewflix-app » (mewflix.vercel.app est dé
 - Pas de blocage réseau des régies (les popups sont neutralisés, pas les scripts).
 
 Pour lever les trois premières limites, il suffit d'ajouter le domaine de déploiement à la liste CORS de l'API (`API/Mainapi/middleware/cors.js`, ou l'environnement correspondant), au widget Turnstile et aux applications OAuth : le relais devient alors facultatif.
+
+## Relais média `/media` (rustine de phase de test)
+
+Le CDN HLS de la source « pulse » (`*.finepulfe.xyz`) refuse toute requête dont
+l'Origin n'est pas un domaine Movix : depuis `mewflix-app.vercel.app` le lecteur
+recevait 403 et retombait sur des embeds tiers. `web/api/media.js` relaie ces
+hôtes (liste close `MEDIA_RELAY_HOSTS`, suffixes séparés par des virgules) sans
+Origin ni Referer, réécrit les playlists `.m3u8` en URL absolues `/media/<fichier>?u=…`
+et renvoie les segments avec CORS ouvert. Le détour côté lecteur (XHR, fetch,
+`src` natif) est injecté par `buildSiteTweaks({ mediaRelay })`.
+
+Chaque octet vidéo transite par Vercel (quota « Fast Origin Transfer ») : la
+vraie solution reste l'ajout du domaine dans la liste d'origines autorisées du
+CDN, côté team. Pour couper le relais : retirer `mediaRelay` dans `scripts/build.mjs`.

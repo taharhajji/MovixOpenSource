@@ -11,6 +11,7 @@ import { createServer } from 'node:http';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import mediaHandler from '../api/media.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST = resolve(__dirname, '..', 'dist');
@@ -75,8 +76,26 @@ function serveStatic(req, res) {
   createReadStream(file).pipe(res);
 }
 
+
+// Relais média : même fonction Edge que sur Vercel (web/api/media.js).
+async function media(req, res) {
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(req.headers)) {
+    if (typeof value === 'string' && !DROP_REQUEST.has(name)) headers.set(name, value);
+  }
+  const response = await mediaHandler(new Request(`http://localhost:${PORT}${req.url}`, { method: req.method, headers }));
+  const out = {};
+  response.headers.forEach((value, name) => { out[name] = value; });
+  res.writeHead(response.status, out);
+  if (response.body && req.method !== 'HEAD') {
+    for await (const chunk of response.body) res.write(chunk);
+  }
+  res.end();
+}
+
 createServer((req, res) => {
   if (req.url.startsWith('/api/')) return proxy(req, res);
+  if (req.url === '/media' || req.url.startsWith('/media?') || req.url.startsWith('/media/')) return media(req, res);
   return serveStatic(req, res);
 }).listen(PORT, () => {
   console.log(`[serve-local] http://localhost:${PORT}  (dist: ${DIST}, API → ${UPSTREAM})`);
