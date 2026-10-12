@@ -190,10 +190,11 @@ function buildHideBranding() {
     // Reste de la page (textes des pages VIP, aide, conditions…) : passe différée
     // au prochain frame, une seule par rafale de mutations, header/footer exclus.
     var bodyPassPending = false;
-    function scrubBodyText() {
-      bodyPassPending = false;
-      if (!document.body) return;
-      var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+    var bodyQueue = [];
+    var bodyQueueWhole = true;
+    function scrubRoot(root) {
+      if (!root || root.nodeType !== 1) return;
+      var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
         acceptNode: function(node) {
           var p = node.parentElement;
           if (!p || p.closest('header, footer, script, style, textarea, input')) return NodeFilter.FILTER_REJECT;
@@ -207,6 +208,27 @@ function buildHideBranding() {
       }
       BRAND_ANY_RE.lastIndex = 0;
     }
+    // Seuls les sous-arbres touchés sont parcourus (le corps entier une fois).
+    function scrubBodyText() {
+      bodyPassPending = false;
+      if (!document.body) return;
+      var roots = bodyQueueWhole ? [document.body] : bodyQueue;
+      bodyQueue = [];
+      bodyQueueWhole = false;
+      for (var i = 0; i < roots.length; i++) scrubRoot(roots[i]);
+    }
+    function queueMutations(mutations) {
+      if (bodyQueueWhole || !mutations) return;
+      for (var i = 0; i < mutations.length && bodyQueue.length < 200; i++) {
+        var m = mutations[i];
+        if (m.type === 'characterData') { if (m.target.parentElement) bodyQueue.push(m.target.parentElement); continue; }
+        for (var j = 0; j < m.addedNodes.length; j++) {
+          var n = m.addedNodes[j];
+          bodyQueue.push(n.nodeType === 1 ? n : n.parentElement);
+        }
+      }
+      if (bodyQueue.length >= 200) { bodyQueueWhole = true; bodyQueue = []; }
+    }
     function scheduleBodyPass() {
       if (bodyPassPending) return;
       bodyPassPending = true;
@@ -217,10 +239,11 @@ function buildHideBranding() {
       setTimeout(run, 80);
     }
 
-    function schedule() {
+    function schedule(mutations) {
       if (scheduled) return;
       scheduled = true;
       try { scrub(); } finally { scheduled = false; }
+      queueMutations(mutations);
       scheduleBodyPass();
     }
 
@@ -516,47 +539,54 @@ const EMBED_SOURCE_IDS = [
   'custom', 'frembed', 'vox', 'kisskh', 'vostfr',
 ];
 
-function buildEmbedSourcesOff(storagePrefix) {
+function buildEmbedSourcesOff(storagePrefix, exemptHosts) {
   return `
   // --- Lecteurs embed désactivés (version web) ---------------------------------
   // Les lecteurs tiers en iframe portent leurs propres publicités (bannières
   // dans l'image, « installez tel navigateur »…), impossibles à retirer de
-  // l'extérieur. Ils sont désactivés dans l'ordre de priorité du site (jamais
-  // choisis automatiquement) et leur section disparaît du panneau Paramètres.
-  // Appliqué une fois par profil : un utilisateur qui les réactive dans les
-  // réglages du site est respecté.
-  (function disableEmbedSources() {
+  // l'extérieur. Par défaut ils sont désactivés dans l'ordre de priorité du
+  // site (jamais choisis automatiquement) et leur section disparaît du
+  // panneau Paramètres. L'utilisateur peut les autoriser depuis l'écran
+  // MEWFLIX « pas de source sans pub » (clé <prefixe>:embeds_mode = on) ;
+  // le réglage est relu à chaque chargement, dans les deux sens.
+  (function gateEmbedSources() {
     var KEY = 'settings_source_priority_prefs';
-    var FLAG = ${JSON.stringify(storagePrefix + ':embeds_off')};
+    var MODE_KEY = ${JSON.stringify(storagePrefix + ':embeds_mode')};
     var EMBEDS = ${JSON.stringify(EMBED_SOURCE_IDS)};
     function isEmbed(id) { return EMBEDS.indexOf(id) >= 0; }
-    try {
-      if (!localStorage.getItem(FLAG)) {
+    var allowed = false;
+    try { allowed = localStorage.getItem(MODE_KEY) === 'on'; } catch (e) {}
+    function applyMode(on) {
+      try {
         var raw = localStorage.getItem(KEY);
-        var prefs = null;
-        try { prefs = raw ? JSON.parse(raw) : null; } catch (e) { prefs = null; }
-        var tv = prefs && prefs.version === 4 && prefs.categories && prefs.categories.moviesTv;
+        var prefs = raw ? JSON.parse(raw) : null;
+        var tv = prefs && prefs.categories && prefs.categories.moviesTv;
         if (tv && Array.isArray(tv.sourceOrder)) {
-          var changed = false;
           for (var i = 0; i < tv.sourceOrder.length; i++) {
             var entry = tv.sourceOrder[i];
-            if (entry && isEmbed(entry.id) && entry.enabled !== false) { entry.enabled = false; changed = true; }
+            if (entry && isEmbed(entry.id)) entry.enabled = !!on;
           }
-          if (tv.pinnedSource && isEmbed(tv.pinnedSource.id)) { tv.pinnedSource = null; changed = true; }
-          if (changed) {
-            prefs.updatedAt = Date.now();
-            localStorage.setItem(KEY, JSON.stringify(prefs));
-          }
-          localStorage.setItem(FLAG, '1');
+          if (!on && tv.pinnedSource && isEmbed(tv.pinnedSource.id)) tv.pinnedSource = null;
+          prefs.updatedAt = Date.now();
+          localStorage.setItem(KEY, JSON.stringify(prefs));
         }
-        // Sans préférences enregistrées (premier lancement), le bloc SwiftFlux
-        // vient d'en créer : on repasse au prochain chargement.
-      }
-      try {
-        var last = localStorage.getItem('playerLastId');
-        if (last && isEmbed(String(last).split('_')[0])) localStorage.removeItem('playerLastId');
+        if (!on) {
+          var last = localStorage.getItem('playerLastId');
+          if (last && isEmbed(String(last).split('_')[0])) localStorage.removeItem('playerLastId');
+        }
       } catch (e) {}
-    } catch (e) {}
+    }
+    // Partagé avec les extras de la version web (écran « pas de source sans pub »).
+    window.__orbitEmbeds = {
+      allowed: allowed,
+      exemptHosts: ${JSON.stringify(exemptHosts || [])},
+      setMode: function(on) {
+        try { if (on) localStorage.setItem(MODE_KEY, 'on'); else localStorage.removeItem(MODE_KEY); } catch (e) {}
+        applyMode(on);
+      }
+    };
+    applyMode(allowed);
+    if (allowed) return;
 
     // Section « Lecteurs Embed » du panneau Paramètres du lecteur.
     // Sans antislash : la chaîne passe par un gabarit JS puis par le build web.
@@ -586,6 +616,33 @@ function buildEmbedSourcesOff(storagePrefix) {
     };
     if (document.documentElement) start();
     else document.addEventListener('DOMContentLoaded', start, { once: true });
+  })();
+`;
+}
+
+function buildThemeInjection(css) {
+  return `
+  // --- Thème MEWFLIX (app de bureau) ---------------------------------------
+  // Le site en ligne garde sa palette rouge : ces règles, extraites du build
+  // web déjà recoloré (web/scripts/extract-theme-css.mjs), sont posées en fin
+  // de <body>, donc après toutes les feuilles du site, même chargées plus tard.
+  (function applyTheme() {
+    var CSS = ${JSON.stringify(String(css))};
+    function place() {
+      if (document.getElementById('orbit-theme')) return true;
+      var parent = document.body;
+      if (!parent) return false;
+      var style = document.createElement('style');
+      style.id = 'orbit-theme';
+      style.textContent = CSS;
+      parent.appendChild(style);
+      return true;
+    }
+    if (!place()) document.addEventListener('DOMContentLoaded', place, { once: true });
+    // Si le site remplace le corps de page, la feuille revient.
+    new MutationObserver(function() {
+      if (document.body && !document.getElementById('orbit-theme')) place();
+    }).observe(document.documentElement, { childList: true });
   })();
 `;
 }
@@ -678,6 +735,7 @@ function buildMediaRelay(relayPath, hosts) {
  * @param {string} [options.adPopupAutoExpr]  expression JS ('true', 'false' ou dynamique)
  * @param {'last'|'off'|'keep'} [options.swiftfluxSource]
  * @param {string} [options.storagePrefix]
+ * @param {string} [options.themeCss]  feuille de style de la marque, posée en fin de body (app de bureau)
  * @param {boolean} [options.disableEmbedSources]  lecteurs embed (iframes tiers, avec pubs)
  *   désactivés dans l'ordre de priorité et masqués du panneau (version web)
  * @param {{path: string, hosts: string[]}|null} [options.mediaRelay]  relais /media du site web
@@ -697,6 +755,7 @@ function buildSiteTweaks({
   sandboxEmbeds = true,
   mediaRelay = null,
   disableEmbedSources = false,
+  themeCss = '',
   sandboxExemptHosts = ['challenges.cloudflare.com', 'youtube.com', 'youtube-nocookie.com', 'player.vimeo.com', 'accounts.google.com', 'discord.com'],
 } = {}) {
   const parts = [];
@@ -715,7 +774,8 @@ function buildSiteTweaks({
   if (swiftfluxSource === 'last' || swiftfluxSource === 'off') parts.push(buildSwiftfluxDemotion(swiftfluxSource));
   if (Array.isArray(popupSafeHosts)) parts.push(buildPopupNeutralizer(popupSafeHosts));
   if (sandboxEmbeds) parts.push(buildIframeSandbox(sandboxExemptHosts));
-  if (disableEmbedSources) parts.push(buildEmbedSourcesOff(storagePrefix));
+  if (disableEmbedSources) parts.push(buildEmbedSourcesOff(storagePrefix, sandboxExemptHosts));
+  if (themeCss) parts.push(buildThemeInjection(themeCss));
   if (mediaRelay && mediaRelay.path && Array.isArray(mediaRelay.hosts) && mediaRelay.hosts.length) {
     parts.push(buildMediaRelay(mediaRelay.path, mediaRelay.hosts));
   }

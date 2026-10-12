@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MEWFLIX — hors ligne</title>
+  <meta name="theme-color" content="#141518">
+  <link rel="icon" href="/mewflix-icon.png">
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: #141518; color: #e7edf7; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 32px 20px; gap: 14px; }
+    img { width: 112px; height: 112px; border-radius: 26px; box-shadow: 0 18px 50px rgba(0,0,0,.5); }
+    h1 { margin: 10px 0 0; font-size: 1.6rem; letter-spacing: .06em; }
+    p { margin: 0; color: #9fb3d1; max-width: 32ch; line-height: 1.5; }
+    button { margin-top: 14px; border: 0; border-radius: 999px; padding: 12px 26px; font-size: 1rem; font-weight: 700; color: #141518; background: #dbe6f6; cursor: pointer; }
+    button:active { transform: scale(.98); }
+    .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #e0605a; margin-right: 6px; vertical-align: middle; }
+    .dot.on { background: #4ccf7a; }
+    small { color: #6e83ab; }
+  </style>
+</head>
+<body>
+  <main>
+    <img src="/mewflix-icon.png" alt="MEWFLIX">
+    <h1>MEWFLIX</h1>
+    <p id="msg"><span class="dot" id="dot"></span>Pas de connexion pour le moment. Le site reviendra tout seul dès que le réseau sera là.</p>
+    <button id="retry" type="button">Réessayer</button>
+    <small id="hint">Vérification automatique toutes les 5 secondes</small>
+  </main>
+  <script>
+    (function () {
+      var retry = document.getElementById('retry');
+      var dot = document.getElementById('dot');
+      var target = (function () {
+        if (typeof window.__mewflixFrom === 'string' && window.__mewflixFrom.charAt(0) === '/') return window.__mewflixFrom;
+        try { var u = new URL(location.href); return u.searchParams.get('from') || '/'; } catch (e) { return '/'; }
+      })();
+      function go() { location.replace(target); }
+      function check() {
+        fetch('/api/health', { cache: 'no-store', mode: 'same-origin' })
+          .then(function (r) { if (r.ok) { dot.className = 'dot on'; go(); } })
+          .catch(function () {});
+      }
+      retry.addEventListener('click', go);
+      window.addEventListener('online', check);
+      setInterval(check, 5000);
+    })();
+  </script>
+</body>
+</html>

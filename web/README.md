@@ -61,3 +61,26 @@ et renvoie les segments avec CORS ouvert. Le détour côté lecteur (XHR, fetch,
 Chaque octet vidéo transite par Vercel (quota « Fast Origin Transfer ») : la
 vraie solution reste l'ajout du domaine dans la liste d'origines autorisées du
 CDN, côté team. Pour couper le relais : retirer `mediaRelay` dans `scripts/build.mjs`.
+
+## Nuit du 12 octobre 2026 — ce qui a changé
+
+- **Thème MEWFLIX** (`scripts/theme.mjs`) : la palette rouge de Tailwind (identité Movix)
+  est réécrite en bleu ardoise tiré du logo, dans les CSS et les bundles JS, après build.
+  `scripts/extract-theme-css.mjs` en tire la feuille `desktop/src/injection/theme.css` pour l'app de bureau.
+- **PWA** : `public/sw.js` (navigation réseau d'abord, `offline.html` quand le réseau manque,
+  `/assets/` en cache), manifeste `standalone` avec icônes 192/512/1024 + maskable,
+  bouton « Installer MEWFLIX » sur mobile (Android : invite native ; iPhone : explication).
+- **Extras web** (`scripts/web-extras.mjs`, injectés en fin de body) : logo dans l'en-tête,
+  « Surprends-moi » (un titre au hasard lancé dans le lecteur), bouton « Remonter »,
+  et la **porte « pas de source sans publicité »** : aucun lecteur tiers (iframe) ne se charge
+  sans accord explicite ; le choix se range dans `mewflix_web:embeds_mode` et se défait d'un geste.
+- **Relais signé** (`api/media.js`, `api/proxy.js`) : les adresses de flux renvoyées par l'API
+  sont réécrites vers `/media/...&s=<HMAC>` ; n'importe quel CDN passe sans redéploiement.
+  Secret : variable `MEDIA_RELAY_SECRET` (Vercel) et `web/.env.relay.local` (miroir local, ignoré par git).
+- **API plus robuste** : trois tentatives sur panne réseau ou 502/503/504, catalogue
+  (`tmdb/`, `trending/`, `links/`…) mis en cache sur le réseau Vercel et servi périmé pendant une panne.
+- **État du service** : `/api/health` (JSON) et la page `/status`.
+- **Relais Cloudflare prêt** : `relay-worker/` (même code, sans quota de bande passante) ;
+  activer avec `MEDIA_RELAY_BASE`, voir son README.
+
+Tests : `node --test web/tests/*.test.mjs` (relais, signature, thème) et `cd desktop && npm test`.

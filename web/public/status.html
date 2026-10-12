@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MEWFLIX — état du service</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#141518">
+  <link rel="icon" href="/mewflix-icon.png">
+  <style>
+    :root { color-scheme: dark; --bg: #141518; --card: #1c1f26; --text: #e7edf7; --muted: #9fb3d1; --accent: #dbe6f6; --ok: #4ccf7a; --warn: #f0b84a; --ko: #e0605a; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 760px; margin: 0 auto; padding: 32px 16px 60px; }
+    header { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+    header img { width: 48px; height: 48px; border-radius: 13px; }
+    h1 { margin: 0; font-size: 1.35rem; letter-spacing: .04em; }
+    .sub { color: var(--muted); font-size: .92rem; margin-top: 2px; }
+    .overall { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-radius: 16px; background: var(--card); border: 1px solid rgba(219,230,246,.12); margin-bottom: 16px; font-weight: 700; font-size: 1.05rem; }
+    .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--muted); flex: none; box-shadow: 0 0 0 4px rgba(255,255,255,.05); }
+    .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.ko { background: var(--ko); }
+    .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .card { padding: 16px; border-radius: 16px; background: var(--card); border: 1px solid rgba(219,230,246,.1); }
+    .card h2 { margin: 0 0 8px; font-size: .95rem; display: flex; align-items: center; gap: 8px; }
+    .card p { margin: 4px 0; color: var(--muted); font-size: .9rem; }
+    .card b { color: var(--text); }
+    footer { margin-top: 26px; color: var(--muted); font-size: .85rem; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+    a { color: var(--accent); }
+    button { border: 0; border-radius: 999px; padding: 8px 14px; background: var(--accent); color: var(--bg); font-weight: 700; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <img src="/mewflix-icon.png" alt="">
+      <div>
+        <h1>MEWFLIX — état du service</h1>
+        <div class="sub">Mesuré depuis le réseau du site, rafraîchi toutes les 30 secondes.</div>
+      </div>
+    </header>
+    <div class="overall"><span class="dot" id="overall-dot"></span><span id="overall">Vérification en cours…</span></div>
+    <div class="grid">
+      <div class="card"><h2><span class="dot" id="api-dot"></span>API catalogue</h2><p id="api">—</p><p id="api-detail"></p></div>
+      <div class="card"><h2><span class="dot" id="cdn-dot"></span>CDN vidéo</h2><p id="cdn">—</p><p id="cdn-detail"></p></div>
+      <div class="card"><h2><span class="dot" id="relay-dot"></span>Relais média</h2><p id="relay">—</p><p id="relay-detail"></p></div>
+      <div class="card"><h2><span class="dot" id="site-dot"></span>Site</h2><p id="site">—</p><p id="site-detail"></p></div>
+    </div>
+    <footer>
+      <span id="checked">—</span>
+      <span><button type="button" id="refresh">Rafraîchir</button> · <a href="/">Retour au site</a></span>
+    </footer>
+  </main>
+  <script>
+    (function () {
+      var $ = function (id) { return document.getElementById(id); };
+      function dot(id, state) { $(id).className = 'dot ' + state; }
+      function fmt(ms) { return ms + ' ms'; }
+      function render(h, siteMs) {
+        var overall = h.status === 'ok' ? 'Tout fonctionne' : h.status === 'degraded' ? 'Fonctionne en mode dégradé' : 'Panne en cours';
+        dot('overall-dot', h.status === 'ok' ? 'ok' : h.status === 'degraded' ? 'warn' : 'ko');
+        $('overall').textContent = overall;
+        dot('api-dot', h.api.ok ? 'ok' : 'ko');
+        $('api').innerHTML = h.api.ok ? '<b>En ligne</b> · ' + fmt(h.api.ms) : '<b>Injoignable</b>' + (h.api.error ? ' · ' + h.api.error : '');
+        $('api-detail').textContent = 'Films, séries, recherche et comptes. Le catalogue récent reste servi depuis le cache pendant une panne.';
+        dot('cdn-dot', h.cdn.ok ? 'ok' : 'warn');
+        $('cdn').innerHTML = h.cdn.ok ? '<b>Joignable</b> · ' + fmt(h.cdn.ms) : '<b>Ne répond pas</b>' + (h.cdn.error ? ' · ' + h.cdn.error : '');
+        $('cdn-detail').textContent = 'Source vidéo principale (lecteur direct, sans publicité).';
+        dot('relay-dot', 'ok');
+        $('relay').innerHTML = '<b>' + (h.relay.mode === 'external' ? 'Relais externe' : 'Relais Vercel') + '</b> · ' + (h.relay.signed ? 'adresses signées' : 'liste d’hôtes');
+        $('relay-detail').textContent = h.relay.mode === 'external' ? h.relay.base : 'Les flux transitent par le site. Un relais externe est prêt à prendre le relais si le quota approche.';
+        dot('site-dot', 'ok');
+        $('site').innerHTML = '<b>En ligne</b> · ' + fmt(siteMs);
+        $('site-detail').textContent = 'Version ' + (h.build || 'inconnue') + (h.region ? ' · région ' + h.region : '');
+        $('checked').textContent = 'Dernière vérification : ' + new Date(h.checkedAt).toLocaleTimeString('fr-FR');
+      }
+      function check() {
+        var t = Date.now();
+        fetch('/api/health', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (h) { render(h, Date.now() - t); }).catch(function (e) {
+          dot('overall-dot', 'ko'); $('overall').textContent = 'Le site ne répond pas correctement (' + e.message + ')';
+          dot('site-dot', 'ko'); $('site').innerHTML = '<b>Erreur</b>';
+        });
+      }
+      $('refresh').addEventListener('click', check);
+      check();
+      setInterval(check, 30000);
+    })();
+  </script>
+</body>
+</html>

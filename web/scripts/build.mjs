@@ -15,13 +15,16 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, write
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_RELAY_HOSTS, RELAY_PATH } from '../api/media.js';
+import { applyTheme } from './theme.mjs';
+import { buildWebExtras } from './web-extras.mjs';
+import { execSync } from 'node:child_process';
 
 const require = createRequire(import.meta.url);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB = resolve(__dirname, '..');
 const ROOT = resolve(WEB, '..');
 const BRAND = require(join(ROOT, 'desktop', 'src', 'branding.js'));
-const { buildSiteTweaks } = require(join(ROOT, 'desktop', 'src', 'injection', 'site-tweaks.js'));
+const { buildSiteTweaks, EMBED_SOURCE_IDS } = require(join(ROOT, 'desktop', 'src', 'injection', 'site-tweaks.js'));
 const { SAFE_EXTERNAL_HOSTS } = require(join(ROOT, 'desktop', 'src', 'lib', 'navigationPolicy.js'));
 
 function arg(name, fallback) {
@@ -36,6 +39,12 @@ function arg(name, fallback) {
 const ORIGIN = arg('origin', process.env.MEWFLIX_ORIGIN || '').replace(/\/+$/, '');
 const UPSTREAM = arg('upstream', process.env.UPSTREAM_API || 'https://api.movix.luxe').replace(/\/+$/, '');
 const SKIP_VITE = process.argv.includes('--skip-vite');
+// Identifiant de build (cache du service worker, console) : sha git court + horodatage.
+const BUILD = (() => {
+  let sha = 'dev';
+  try { sha = execSync('git rev-parse --short HEAD', { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch (_) { /* hors git */ }
+  return `${sha}-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}`;
+})();
 // URL publique (liens canoniques, JSON-LD, partages) : exigée par vite.config,
 // indépendante de la base d'API qui reste relative.
 const SITE_URL = arg('site', process.env.MEWFLIX_SITE_URL || ORIGIN || 'https://mewflix-app.vercel.app').replace(/\/+$/, '');
@@ -103,8 +112,17 @@ if (!ORIGIN) {
   console.log(`[web] replis localhost:25565 neutralisés dans ${patched} bundle(s)`);
 }
 
-// --- Icône et manifeste PWA ---------------------------------------------------
+// --- Thème MEWFLIX : palette rouge Movix → bleu ardoise du logo -------------------
+{
+  const { files, replacements } = applyTheme(DIST);
+  console.log(`[web] thème appliqué : ${replacements} couleur(s) réécrite(s) dans ${files} fichier(s)`);
+}
+
+// --- Icônes et manifeste PWA ---------------------------------------------------
 cpSync(join(ROOT, 'desktop', 'build', 'icon.png'), join(DIST, 'mewflix-icon.png'));
+for (const name of ['mewflix-icon-192.png', 'mewflix-icon-512.png', 'mewflix-icon-maskable.png', 'offline.html', 'status.html']) {
+  cpSync(join(WEB, 'public', name), join(DIST, name));
+}
 // Vite publie le manifeste sous un nom haché (assets/manifest-<hash>.json),
 // référencé par <link rel="manifest"> dans index.html.
 const manifestMatch = /<link rel="manifest" href="\/([^"]+)"/.exec(readFileSync(join(DIST, 'index.html'), 'utf8'));
@@ -117,15 +135,26 @@ if (existsSync(manifestPath)) {
   manifest.description = BRAND.TAGLINE;
   manifest.background_color = BRAND.BACKGROUND;
   manifest.theme_color = BRAND.BACKGROUND;
-  manifest.icons = [{ src: '/mewflix-icon.png', sizes: '1024x1024', type: 'image/png', purpose: 'any' }];
+  manifest.icons = [
+    { src: '/mewflix-icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+    { src: '/mewflix-icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+    { src: '/mewflix-icon.png', sizes: '1024x1024', type: 'image/png', purpose: 'any' },
+    { src: '/mewflix-icon-maskable.png', sizes: '1024x1024', type: 'image/png', purpose: 'maskable' },
+  ];
+  manifest.display = 'standalone';
+  manifest.start_url = '/';
+  manifest.id = '/';
+  manifest.scope = '/';
+  manifest.lang = 'fr';
+  delete manifest.screenshots;
   for (const shortcut of manifest.shortcuts || []) {
     shortcut.icons = [{ src: '/mewflix-icon.png', sizes: '1024x1024' }];
   }
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
-// --- Service worker : désinscription (celui du site redirige vers des miroirs Movix)
-cpSync(join(WEB, 'public', 'sw.js'), join(DIST, 'sw.js'));
+// --- Service worker MEWFLIX (page hors-ligne, assets en cache) -------------------
+writeFileSync(join(DIST, 'sw.js'), readFileSync(join(WEB, 'public', 'sw.js'), 'utf8').replaceAll('__BUILD__', BUILD));
 
 // --- index.html : titre, métadonnées, icônes, retouches de site ----------------
 const indexPath = join(DIST, 'index.html');
@@ -153,7 +182,8 @@ const tweaks = buildSiteTweaks({
   hideSiteBranding: true,
   localVip: true,
   adPopupAutoExpr: 'true',
-  swiftfluxSource: 'last',
+  // SwiftFlux exige une vérification Turnstile liée au domaine Movix : inutilisable ici.
+  swiftfluxSource: 'off',
   storagePrefix: 'mewflix_web',
   popupSafeHosts: SAFE_EXTERNAL_HOSTS,
   mediaRelay: { path: RELAY_PATH, hosts: DEFAULT_RELAY_HOSTS },
@@ -163,6 +193,19 @@ const tweaksTag = `<script id="mewflix-site-tweaks">${tweaks.replace(/<\/script/
 if (!/<script id="mewflix-site-tweaks">/.test(html)) {
   html = html.replace(/<head>/i, `<head>\n        ${tweaksTag}`);
 }
+const extras = buildWebExtras({
+  appName: BRAND.APP_NAME,
+  accent: BRAND.ACCENT,
+  accentSoft: BRAND.ACCENT_SOFT,
+  background: BRAND.BACKGROUND,
+  iconUrl: '/mewflix-icon-192.png',
+  build: BUILD,
+  embedIds: EMBED_SOURCE_IDS,
+  storagePrefix: 'mewflix_web',
+});
+const extrasTag = `<script id="mewflix-web-extras">${extras.replace(/<\/script/gi, '<\\/script')}</script>`;
+html = html.replace(/<script id="mewflix-web-extras">[\s\S]*?<\/script>\s*/g, '');
+html = html.replace(/<\/body>/i, `${extrasTag}\n</body>`);
 writeFileSync(indexPath, html);
 
 // --- Résumé ----------------------------------------------------------------------

@@ -1,0 +1,11 @@
+name = "mewflix-media-relay"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+# Hôtes relayés sans signature (suffixes, séparés par des virgules).
+[vars]
+MEDIA_RELAY_HOSTS = "finepulfe.xyz"
+
+# Secret de signature : `npx wrangler secret put MEDIA_RELAY_SECRET`
+# (même valeur que la variable MEDIA_RELAY_SECRET du projet Vercel).

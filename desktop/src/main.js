@@ -131,6 +131,13 @@ function bootstrap() {
   function loadInjectionCode() {
     try {
       const userscriptSource = fs.readFileSync(USERSCRIPT_PATH, 'utf8');
+      // Feuille de style de la marque (règles du site recolorées, voir
+      // web/scripts/extract-theme-css.mjs) : optionnelle, le site reste
+      // utilisable sans.
+      let themeCss = '';
+      try {
+        if (config.hideSiteBranding) themeCss = fs.readFileSync(path.join(__dirname, 'injection', 'theme.css'), 'utf8');
+      } catch (_) { /* pas de thème : palette du site */ }
       injectionCode = buildInjectedJavaScript({
         version: app.getVersion(),
         userscriptSource,
@@ -139,7 +146,9 @@ function bootstrap() {
         hideSiteBranding: config.hideSiteBranding,
         localVip: config.localVipEnabled,
         swiftfluxSource: config.swiftfluxSource,
+        themeCss,
       });
+      console.log(`[movix] thème ${themeCss ? `appliqué (${(themeCss.length / 1024).toFixed(0)} Ko)` : 'du site'}`);
       console.log(`[movix] source SwiftFlux (vérification robot) : ${config.swiftfluxSource}`);
       console.log(`[movix] marque du site ${config.hideSiteBranding ? 'masquée' : 'visible'} dans la page`);
       console.log(`[movix] statut VIP local ${config.localVipEnabled ? 'actif' : 'désactivé'}`);
@@ -665,6 +674,7 @@ function bootstrap() {
               return { position: idx + 1, of: order.length, enabled: idx >= 0 ? order[idx].enabled : null };
             } catch (e) { return null; }
           })(),
+          theme: !!document.getElementById('orbit-theme'),
           vip: (function() {
             try {
               localStorage.removeItem('is_vip');

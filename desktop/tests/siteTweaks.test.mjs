@@ -118,23 +118,24 @@ test('VIP local : la clé is_vip est épinglée à true', () => {
   assert.equal(window.__ORBIT_LOCAL_VIP__, true);
 });
 
-test('lecteurs embed désactivés : ordre par défaut, une seule fois, dernier lecteur embed oublié', () => {
-  const { store } = runInFakePage(buildSiteTweaks({ appName: 'X', swiftfluxSource: 'last', disableEmbedSources: true, storagePrefix: 'w' }), {
+test('lecteurs embed : désactivés par défaut, réactivés quand le mode est « on », dernier lecteur embed oublié', () => {
+  const { store } = runInFakePage(buildSiteTweaks({ appName: 'X', swiftfluxSource: 'off', disableEmbedSources: true, storagePrefix: 'w' }), {
     storage: { playerLastId: 'omega_0' },
   });
   const order = JSON.parse(store.get('settings_source_priority_prefs')).categories.moviesTv.sourceOrder;
   for (const entry of order) {
+    if (entry.id === 'swiftflux') continue;
     assert.equal(entry.enabled, !EMBED_SOURCE_IDS.includes(entry.id), `source ${entry.id}`);
   }
-  assert.equal(store.get('w:embeds_off'), '1');
   assert.equal(store.get('playerLastId'), undefined);
 
-  // Réactivation manuelle par l'utilisateur : respectée au chargement suivant.
-  const prefs = JSON.parse(store.get('settings_source_priority_prefs'));
-  prefs.categories.moviesTv.sourceOrder.find((e) => e.id === 'omega').enabled = true;
-  const again = runInFakePage(buildSiteTweaks({ appName: 'X', swiftfluxSource: 'last', disableEmbedSources: true, storagePrefix: 'w' }), {
-    storage: { settings_source_priority_prefs: JSON.stringify(prefs), 'w:embeds_off': '1' },
+  // Mode « on » (choisi depuis l'écran « pas de source sans pub ») : tout revient.
+  const on = runInFakePage(buildSiteTweaks({ appName: 'X', swiftfluxSource: 'off', disableEmbedSources: true, storagePrefix: 'w' }), {
+    storage: { settings_source_priority_prefs: store.get('settings_source_priority_prefs'), 'w:embeds_mode': 'on' },
   });
-  const omega = JSON.parse(again.store.get('settings_source_priority_prefs')).categories.moviesTv.sourceOrder.find((e) => e.id === 'omega');
-  assert.equal(omega.enabled, true);
+  const onOrder = JSON.parse(on.store.get('settings_source_priority_prefs')).categories.moviesTv.sourceOrder;
+  for (const entry of onOrder) {
+    if (entry.id === 'swiftflux') continue;
+    assert.equal(entry.enabled, true, `source ${entry.id} (mode on)`);
+  }
 });

@@ -1,5 +1,7 @@
 /**
- * Relais média Edge : /media/<fichier>?u=<URL absolue> (réécriture vercel.json).
+ * Relais média : /media/<fichier>?u=<URL absolue>[&s=<signature>]
+ * (réécriture vercel.json → cette fonction Edge ; même code dans le Worker
+ * Cloudflare de web/relay-worker/).
  *
  * Le CDN HLS de la source « pulse » (finepulfe) refuse toute requête portant
  * un en-tête Origin ou Referer étranger aux domaines Movix : un navigateur sur
@@ -8,13 +10,17 @@
  * CORS ouvert, et réécrit les playlists HLS (.m3u8) pour que segments, clés et
  * variantes repassent eux aussi par le relais.
  *
- * Hôtes relayés : liste close (MEDIA_RELAY_HOSTS, suffixes séparés par des
- * virgules) pour ne pas servir de proxy ouvert. Les URL produites par la
- * réécriture d'une playlist pointent toujours vers ces mêmes hôtes.
+ * Deux façons d'être relayé, pour ne jamais servir de proxy ouvert :
+ *  - hôtes d'une liste close (MEDIA_RELAY_HOSTS, suffixes séparés par des
+ *    virgules ; finepulfe.xyz par défaut) ;
+ *  - URL signée (paramètre s = HMAC-SHA256 du u, secret MEDIA_RELAY_SECRET) :
+ *    le relais /api/* signe les adresses de flux renvoyées par l'API, et les
+ *    playlists réécrites portent des URL signées. Si la team change de CDN,
+ *    rien à redéployer.
  *
- * Rustine pour la phase de test : chaque octet vidéo transite par Vercel
- * (quota « Fast Origin Transfer »). La vraie solution est l'ajout du domaine
- * dans la liste d'origines autorisées du CDN, côté team.
+ * MEDIA_RELAY_BASE (optionnel) : origine d'un relais externe (Worker
+ * Cloudflare, sans quota de bande passante). Quand il est défini, la fonction
+ * Vercel redirige vers lui au lieu de transférer la vidéo elle-même.
  */
 
 export const config = { runtime: 'edge' };
@@ -22,9 +28,26 @@ export const config = { runtime: 'edge' };
 export const DEFAULT_RELAY_HOSTS = ['finepulfe.xyz'];
 export const RELAY_PATH = '/media';
 
-const RELAY_HOSTS = (typeof process !== 'undefined' && process.env && process.env.MEDIA_RELAY_HOSTS
-  ? process.env.MEDIA_RELAY_HOSTS.split(',')
-  : DEFAULT_RELAY_HOSTS).map((s) => s.trim().toLowerCase()).filter(Boolean);
+const overrides = {};
+/** Configuration explicite (Worker Cloudflare : bindings d'environnement). */
+export function configureRelay({ secret, hosts, base } = {}) {
+  if (secret !== undefined) overrides.secret = secret;
+  if (hosts !== undefined) overrides.hosts = hosts;
+  if (base !== undefined) overrides.base = base;
+}
+function env(name) {
+  try { return (typeof process !== 'undefined' && process.env && process.env[name]) || ''; } catch (_) { return ''; }
+}
+export function relayConfig() {
+  const rawHosts = overrides.hosts !== undefined ? overrides.hosts : env('MEDIA_RELAY_HOSTS');
+  const hosts = (Array.isArray(rawHosts) ? rawHosts : String(rawHosts || '').split(','))
+    .map((s) => String(s).trim().toLowerCase()).filter(Boolean);
+  return {
+    secret: String(overrides.secret !== undefined ? overrides.secret : env('MEDIA_RELAY_SECRET') || ''),
+    hosts: hosts.length ? hosts : DEFAULT_RELAY_HOSTS,
+    base: String(overrides.base !== undefined ? overrides.base : env('MEDIA_RELAY_BASE') || '').replace(/\/+$/, ''),
+  };
+}
 
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 const PLAYLIST_TYPES = /mpegurl|application\/x-mpegurl|audio\/mpegurl|vnd\.apple\.mpegurl/i;
@@ -38,49 +61,114 @@ const CORS = {
   'access-control-max-age': '86400',
 };
 
-export function hostAllowed(hostname, hosts = RELAY_HOSTS) {
+export function hostAllowed(hostname, hosts = relayConfig().hosts) {
   const h = String(hostname || '').toLowerCase();
   return hosts.some((suffix) => h === suffix || h.endsWith(`.${suffix}`));
 }
 
-/**
- * URL relayée : /media/<nom de fichier>?u=<URL absolue>. Le nom de fichier
- * (master.m3u8, segment-000.ts, subs_fre.vtt…) reste en fin de chemin : le
- * lecteur du site et hls.js décident du traitement d'après l'extension (les
- * sous-titres .vtt déclarés en direct sont enveloppés dans une playlist).
- */
-export function relayUrlFor(absoluteUrl, relayPath = RELAY_PATH) {
-  let name = 'media';
+// --- Signature HMAC-SHA256 (WebCrypto, disponible sur Edge et Workers) --------
+const keyCache = new Map();
+async function hmacKey(secret) {
+  let key = keyCache.get(secret);
+  if (!key) {
+    key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    keyCache.set(secret, key);
+  }
+  return key;
+}
+export async function signUrl(url, secret) {
+  if (!secret) return '';
+  const sig = await crypto.subtle.sign('HMAC', await hmacKey(secret), new TextEncoder().encode(String(url)));
+  return Array.from(new Uint8Array(sig)).slice(0, 16).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+export async function verifySignature(url, signature, secret) {
+  if (!secret || !signature) return false;
+  const expected = await signUrl(url, secret);
+  if (expected.length !== String(signature).length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ String(signature).charCodeAt(i);
+  return diff === 0;
+}
+
+function fileNameOf(absoluteUrl) {
   try {
     const segments = new URL(absoluteUrl).pathname.split('/').filter(Boolean);
-    if (segments.length) name = segments[segments.length - 1];
-  } catch (_) { /* nom générique */ }
-  return `${relayPath}/${encodeURIComponent(name)}?u=${encodeURIComponent(absoluteUrl)}`;
+    return segments.length ? segments[segments.length - 1] : 'media';
+  } catch (_) { return 'media'; }
 }
 
 /**
- * Réécrit une playlist HLS : chaque URI (lignes de segments / variantes et
- * attributs URI="…" des balises EXT-X-KEY, EXT-X-MAP, EXT-X-MEDIA, EXT-X-I-FRAME-STREAM-INF…)
- * devient une URL relative au relais. Les URI relatives sont résolues contre `baseUrl`.
+ * URL relayée : <relayPath>/<nom de fichier>?u=<URL absolue>[&s=<signature>].
+ * Le nom de fichier (master.m3u8, segment-000.ts, subs_fre.vtt…) reste en fin
+ * de chemin : le lecteur du site et hls.js décident du traitement d'après
+ * l'extension (les sous-titres .vtt déclarés en direct sont enveloppés).
  */
+export function relayUrlFor(absoluteUrl, relayPath = RELAY_PATH, signature = '') {
+  const name = encodeURIComponent(fileNameOf(absoluteUrl));
+  return `${relayPath}/${name}?u=${encodeURIComponent(absoluteUrl)}${signature ? `&s=${signature}` : ''}`;
+}
+export async function signedRelayUrlFor(absoluteUrl, relayPath, secret) {
+  return relayUrlFor(absoluteUrl, relayPath, await signUrl(absoluteUrl, secret));
+}
+
+// Découpe une playlist en morceaux : texte conservé tel quel, et URI à
+// remplacer (lignes de segments/variantes, attributs URI="…" des balises
+// EXT-X-KEY, EXT-X-MAP, EXT-X-MEDIA, EXT-X-I-FRAME-STREAM-INF…).
+function splitPlaylist(text) {
+  const parts = [];
+  const lines = String(text).split(/\r?\n/);
+  lines.forEach((line, index) => {
+    if (!line.trim()) parts.push({ text: line });
+    else if (line.startsWith('#')) {
+      for (const piece of line.split(/(URI="[^"]*")/)) {
+        const m = /^URI="([^"]*)"$/.exec(piece);
+        if (m) parts.push({ uri: m[1], wrap: (u) => `URI="${u}"` });
+        else if (piece) parts.push({ text: piece });
+      }
+    } else parts.push({ uri: line, wrap: (u) => u });
+    if (index < lines.length - 1) parts.push({ text: '\n' });
+  });
+  return parts;
+}
+function joinPlaylist(parts, resolved) {
+  let out = '';
+  let i = 0;
+  for (const part of parts) out += part.uri !== undefined ? part.wrap(resolved[i++]) : part.text;
+  return out;
+}
+function absoluteOf(uri, baseUrl) {
+  const trimmed = String(uri).trim();
+  if (!trimmed || /^data:/i.test(trimmed)) return null;
+  try { return new URL(trimmed, baseUrl).href; } catch (_) { return null; }
+}
+
+/** Réécriture synchrone (URL non signées : hôtes de la liste close). */
 export function rewritePlaylist(text, baseUrl, relayPath = RELAY_PATH) {
-  const toRelay = (uri) => {
-    const trimmed = String(uri).trim();
-    if (!trimmed || /^data:/i.test(trimmed)) return uri;
-    try {
-      const absolute = new URL(trimmed, baseUrl).href;
-      return relayUrlFor(absolute, relayPath);
-    } catch (_) {
-      return uri;
-    }
-  };
-  return String(text).split(/\r?\n/).map((line) => {
-    if (!line.trim()) return line;
-    if (line.startsWith('#')) {
-      return line.replace(/URI="([^"]*)"/g, (_m, uri) => `URI="${toRelay(uri)}"`);
-    }
-    return toRelay(line);
-  }).join('\n');
+  const parts = splitPlaylist(text);
+  const resolved = parts.filter((p) => p.uri !== undefined).map((p) => {
+    const abs = absoluteOf(p.uri, baseUrl);
+    return abs ? relayUrlFor(abs, relayPath) : p.uri;
+  });
+  return joinPlaylist(parts, resolved);
+}
+/** Réécriture avec URL signées quand un secret est configuré. */
+export async function rewritePlaylistSigned(text, baseUrl, relayPath = RELAY_PATH, secret = '') {
+  if (!secret) return rewritePlaylist(text, baseUrl, relayPath);
+  const parts = splitPlaylist(text);
+  const resolved = await Promise.all(parts.filter((p) => p.uri !== undefined).map(async (p) => {
+    const abs = absoluteOf(p.uri, baseUrl);
+    return abs ? signedRelayUrlFor(abs, relayPath, secret) : p.uri;
+  }));
+  return joinPlaylist(parts, resolved);
+}
+
+function isPlaylist(url, contentType) {
+  if (PLAYLIST_TYPES.test(contentType || '')) return true;
+  try { return /\.m3u8?$/i.test(new URL(url).pathname); } catch (_) { return false; }
+}
+
+function json(status, body) {
+  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...CORS } });
 }
 
 /**
@@ -95,20 +183,14 @@ export function publicOrigin(request) {
   return `${proto.split(',')[0].trim()}://${host}`;
 }
 
-function isPlaylist(url, contentType) {
-  if (PLAYLIST_TYPES.test(contentType || '')) return true;
-  try { return /\.m3u8?$/i.test(new URL(url).pathname); } catch (_) { return false; }
-}
-
-function json(status, body) {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...CORS } });
-}
-
 export default async function handler(request) {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   if (request.method !== 'GET' && request.method !== 'HEAD') return json(405, { error: 'method_not_allowed' });
 
-  const raw = new URL(request.url).searchParams.get('u') || '';
+  const cfg = relayConfig();
+  const url = new URL(request.url);
+  const raw = url.searchParams.get('u') || '';
+  const signature = url.searchParams.get('s') || '';
   let target;
   try {
     target = new URL(raw);
@@ -116,7 +198,15 @@ export default async function handler(request) {
     return json(400, { error: 'bad_url' });
   }
   if (target.protocol !== 'https:' && target.protocol !== 'http:') return json(400, { error: 'bad_url' });
-  if (!hostAllowed(target.hostname)) return json(403, { error: 'host_not_relayed', host: target.hostname });
+  const allowed = hostAllowed(target.hostname, cfg.hosts) || await verifySignature(target.href, signature, cfg.secret);
+  if (!allowed) return json(403, { error: 'host_not_relayed', host: target.hostname });
+
+  // Relais externe configuré (Worker Cloudflare) : on lui passe la main.
+  const origin = publicOrigin(request);
+  if (cfg.base && cfg.base !== origin) {
+    const sig = signature || await signUrl(target.href, cfg.secret);
+    return Response.redirect(`${cfg.base}${relayUrlFor(target.href, RELAY_PATH, sig)}`, 302);
+  }
 
   const headers = new Headers();
   for (const name of FORWARD_REQUEST_HEADERS) {
@@ -143,7 +233,7 @@ export default async function handler(request) {
   const contentType = upstream.headers.get('content-type') || '';
   if (upstream.ok && request.method === 'GET' && isPlaylist(upstream.url || target.href, contentType)) {
     const text = await upstream.text();
-    const body = rewritePlaylist(text, upstream.url || target.href, publicOrigin(request) + RELAY_PATH);
+    const body = await rewritePlaylistSigned(text, upstream.url || target.href, `${origin}${RELAY_PATH}`, cfg.secret);
     out.delete('content-length');
     out.delete('content-range');
     out.set('content-type', 'application/vnd.apple.mpegurl');
@@ -157,6 +247,8 @@ export default async function handler(request) {
     out.delete('content-length');
     return new Response(`relay upstream ${upstream.status}`, { status: upstream.status, headers: out });
   }
-  if (!out.has('cache-control')) out.set('cache-control', 'public, max-age=3600');
+  // Segments immuables : cache navigateur une heure, cache réseau un jour (un
+  // seul transfert depuis l'origine pour tous les spectateurs d'un même titre).
+  out.set('cache-control', 'public, max-age=3600, s-maxage=86400, immutable');
   return new Response(request.method === 'HEAD' ? null : upstream.body, { status: upstream.status, headers: out });
 }

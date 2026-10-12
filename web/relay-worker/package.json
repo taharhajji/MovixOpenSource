@@ -1,0 +1,14 @@
+{
+  "name": "mewflix-media-relay",
+  "private": true,
+  "type": "module",
+  "description": "Relais média MEWFLIX (Cloudflare Worker), même code que web/api/media.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "secret": "wrangler secret put MEDIA_RELAY_SECRET"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

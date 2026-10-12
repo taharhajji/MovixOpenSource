@@ -6,6 +6,14 @@
   "trailingSlash": false,
   "rewrites": [
     {
+      "source": "/status",
+      "destination": "/status.html"
+    },
+    {
+      "source": "/api/health",
+      "destination": "/api/health"
+    },
+    {
       "source": "/media/:name*",
       "destination": "/api/media"
     },
@@ -22,7 +30,7 @@
       "destination": "https://movix.luxe/avatars/:path*"
     },
     {
-      "source": "/((?!api/|avatars/|media/|media$).*)",
+      "source": "/((?!api/|avatars/|media/|media$|status$|status\\.html$|offline\\.html$).*)",
       "destination": "/index.html"
     }
   ],
@@ -64,7 +72,25 @@
       ]
     },
     {
-      "source": "/media/(.*)",
+      "source": "/status.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    },
+    {
+      "source": "/offline.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    },
+    {
+      "source": "/api/health",
       "headers": [
         {
           "key": "Cache-Control",

@@ -194,3 +194,11 @@ desktop/
 - **Proxy média local** (`GM_openMediaProxy`) : spécifique au mobile, absent ici — le moteur web lit les flux directement, les en-têtes sont posés par `webRequest`.
 - **Discord Rich Presence** : pas intégré (voir [`PreMid/`](../PreMid)).
 - Windows x64 uniquement dans la config de build ; macOS/Linux se rajoutent dans `package.json › build` (sans signature Apple, macOS exigera un clic droit → Ouvrir).
+
+## Thème MEWFLIX dans l'app
+
+Le site en ligne garde sa palette rouge ; l'app injecte `src/injection/theme.css`
+(règles du site recolorées en bleu ardoise, générées par
+`node web/scripts/extract-theme-css.mjs` à partir du build web) en fin de `<body>`.
+Désactivé quand « marque du site visible » est choisi (`--site-branding=0`).
+Le test de fumée vérifie la présence de la feuille (`theme: true`).

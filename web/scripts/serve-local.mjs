@@ -8,10 +8,19 @@
  */
 
 import { createServer } from 'node:http';
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// Secret de signature du relais (même valeur que sur Vercel) : web/.env.relay.local
+try {
+  for (const line of readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '..', '.env.relay.local'), 'utf8').split(/\r?\n/)) {
+    const m = /^([A-Z_]+)=(.*)$/.exec(line.trim());
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
+  }
+} catch { /* pas de secret local : relais par liste d'hôtes */ }
 import mediaHandler from '../api/media.js';
+import apiHandler from '../api/proxy.js';
+import healthHandler from '../api/health.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST = resolve(__dirname, '..', 'dist');
@@ -77,6 +86,31 @@ function serveStatic(req, res) {
 }
 
 
+// Fonctions Edge exécutées telles quelles (web/api/*.js), comme sur Vercel.
+async function edge(handlerFn, req, res, mapUrl) {
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(req.headers)) {
+    if (typeof value === 'string' && !DROP_REQUEST.has(name)) headers.set(name, value);
+  }
+  headers.set('host', `localhost:${PORT}`);
+  const incoming = new URL(req.url, `http://localhost:${PORT}`);
+  const path = mapUrl ? mapUrl(incoming) : req.url;
+  let body;
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    body = Buffer.concat(chunks);
+  }
+  const response = await handlerFn(new Request(`http://localhost:${PORT}${path}`, { method: req.method, headers, body, duplex: 'half' }));
+  const out = {};
+  response.headers.forEach((value, name) => { out[name] = value; });
+  res.writeHead(response.status, out);
+  if (response.body && req.method !== 'HEAD') {
+    for await (const chunk of response.body) res.write(chunk);
+  }
+  res.end();
+}
+
 // Relais média : même fonction Edge que sur Vercel (web/api/media.js).
 async function media(req, res) {
   const headers = new Headers();
@@ -94,7 +128,9 @@ async function media(req, res) {
 }
 
 createServer((req, res) => {
-  if (req.url.startsWith('/api/')) return proxy(req, res);
+  if (req.url === '/api/health' || req.url.startsWith('/api/health?')) return edge(healthHandler, req, res);
+  if (req.url.startsWith('/api/')) return edge(apiHandler, req, res, (u) => `/api/proxy?path=${encodeURIComponent(u.pathname.slice(5))}${u.search ? '&' + u.search.slice(1) : ''}`);
+  if (req.url === '/status') { req.url = '/status.html'; return serveStatic(req, res); }
   if (req.url === '/media' || req.url.startsWith('/media?') || req.url.startsWith('/media/')) return media(req, res);
   return serveStatic(req, res);
 }).listen(PORT, () => {
