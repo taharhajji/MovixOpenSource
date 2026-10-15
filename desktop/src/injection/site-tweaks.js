@@ -66,7 +66,7 @@ function buildLocalVip() {
 `;
 }
 
-function buildHideBranding() {
+function buildHideBranding(brandIconUrl) {
   return `
   // --- Marque du site masquée dans la page -------------------------------------
   // Images de logo et intro animée cachées par CSS ; texte « MOVIX » du header
@@ -78,11 +78,13 @@ function buildHideBranding() {
     var CSS = [
       'img[src*="/movix"], img[alt*="movix" i], .bb-logo { display: none !important; }',
       '[data-movix-logo], svg[aria-label*="movix" i] { display: none !important; }',
+      '.orbit-brand-icon { width: 1.55em; height: 1.55em; border-radius: 24%; margin-right: .45em; vertical-align: middle; box-shadow: 0 2px 10px rgba(0,0,0,.35); flex: none; }',
       '.orbit-brand { display: inline-flex; align-items: center; font-weight: 800; letter-spacing: 0.08em; font-size: 1.5rem; line-height: 1; color: ' + ACCENT + '; }',
     ].join('\\n');
     var BRAND_RE = /^(\\s*)movix(\\s*)$/i;
     var BRAND_ANY_RE = /movix/gi;
     var scheduled = false;
+    var BRAND_ICON = ${JSON.stringify(String(brandIconUrl || ''))};
 
     function addStyle() {
       if (document.getElementById('orbit-site-branding')) return true;
@@ -140,6 +142,27 @@ function buildHideBranding() {
       }
     }
 
+    // Icône de la marque devant le nom, dans le lien d'accueil de l'en-tête
+    // (nom en texte, ou SVG du site remplacé par .orbit-brand).
+    function placeIcon() {
+      if (!BRAND_ICON) return;
+      var links = document.querySelectorAll('header a[href="/"]');
+      for (var i = 0; i < links.length; i++) {
+        var link = links[i];
+        if (link.querySelector('.orbit-brand-icon')) continue;
+        var text = (link.textContent || '').replace(/ +/g, ' ').trim();
+        if (text.toUpperCase() !== APP_NAME.toUpperCase()) continue;
+        var img = document.createElement('img');
+        img.className = 'orbit-brand-icon';
+        img.src = BRAND_ICON;
+        img.alt = '';
+        img.decoding = 'async';
+        link.style.display = 'inline-flex';
+        link.style.alignItems = 'center';
+        link.insertBefore(img, link.firstChild);
+      }
+    }
+
     // Dons : liens vers la page de don et boutons « Faire un don / Soutenir / Donner ».
     var DONATE_RE = /^(faire un don|donner|soutenir(\\s+\\S+)?|make a donation|donate|support(\\s+\\S+)?)$/i;
     // Boutons communautaires sans lien (« Canal Telegram (t.me/…) », « Rejoindre Discord »…).
@@ -181,6 +204,7 @@ function buildHideBranding() {
       addStyle();
       scrubTitle();
       placeWordmark();
+      placeIcon();
       hideDonations();
       overrideAbout();
       var roots = document.querySelectorAll('header, footer');
@@ -647,6 +671,59 @@ function buildThemeInjection(css) {
 `;
 }
 
+function buildNavShortcut({ label, href }) {
+  return `
+  // --- Raccourci de navigation (TV en direct) ---------------------------------
+  // Un lien « TV » après « Anime », dans la barre du haut et dans le menu
+  // mobile : copie du style du lien Anime, icône télé, navigation SPA par
+  // popstate (React Router écoute cet événement).
+  (function addNavShortcut() {
+    var LABEL = ${JSON.stringify(String(label))};
+    var HREF = ${JSON.stringify(String(href))};
+    var TV_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="15" x="2" y="7" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/></svg>';
+    function go(event) {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.button === 1) return;
+      event.preventDefault();
+      if (location.pathname === HREF) return;
+      history.pushState({}, '', HREF);
+      window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
+    }
+    function place() {
+      var anchors = document.querySelectorAll('a[href="/anime"]');
+      for (var i = 0; i < anchors.length; i++) {
+        var anime = anchors[i];
+        var next = anime.nextElementSibling;
+        if (next && next.getAttribute && next.getAttribute('data-orbit-nav') === HREF) continue;
+        if (anime.closest('[data-orbit-nav]')) continue;
+        var link = document.createElement('a');
+        link.href = HREF;
+        link.className = anime.className;
+        link.setAttribute('data-orbit-nav', HREF);
+        var sized = anime.querySelector('svg');
+        link.innerHTML = TV_SVG + '<span>' + LABEL + '</span>';
+        var svg = link.querySelector('svg');
+        if (sized) { svg.setAttribute('width', sized.getAttribute('width') || '16'); svg.setAttribute('height', sized.getAttribute('height') || '16'); if (sized.getAttribute('class')) svg.setAttribute('class', sized.getAttribute('class')); }
+        var animeSpan = anime.querySelector('span');
+        if (animeSpan && animeSpan.className) link.querySelector('span').className = animeSpan.className;
+        link.addEventListener('click', go);
+        anime.parentNode.insertBefore(link, anime.nextSibling);
+      }
+      var mine = document.querySelectorAll('a[data-orbit-nav="' + HREF + '"]');
+      for (var j = 0; j < mine.length; j++) mine[j].setAttribute('aria-current', location.pathname === HREF ? 'page' : 'false');
+    }
+    var pending = false;
+    function schedule() { if (pending) return; pending = true; setTimeout(function() { pending = false; place(); }, 60); }
+    var start = function() {
+      place();
+      new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
+      window.addEventListener('popstate', schedule);
+    };
+    if (document.body) start();
+    else document.addEventListener('DOMContentLoaded', start, { once: true });
+  })();
+`;
+}
+
 function buildMediaRelay(relayPath, hosts) {
   return `
   // --- Relais média (version web) -------------------------------------------
@@ -735,6 +812,8 @@ function buildMediaRelay(relayPath, hosts) {
  * @param {string} [options.adPopupAutoExpr]  expression JS ('true', 'false' ou dynamique)
  * @param {'last'|'off'|'keep'} [options.swiftfluxSource]
  * @param {string} [options.storagePrefix]
+ * @param {string} [options.brandIconUrl]  icône posée devant le nom dans l'en-tête (URL ou data:)
+ * @param {{label: string, href: string}|null} [options.navShortcut]  lien ajouté après « Anime » (défaut : TV en direct)
  * @param {string} [options.themeCss]  feuille de style de la marque, posée en fin de body (app de bureau)
  * @param {boolean} [options.disableEmbedSources]  lecteurs embed (iframes tiers, avec pubs)
  *   désactivés dans l'ordre de priorité et masqués du panneau (version web)
@@ -752,6 +831,8 @@ function buildSiteTweaks({
   storagePrefix = 'orbit_desktop',
   popupSafeHosts = null,
   hideCommunityLinks = hideSiteBranding,
+  brandIconUrl = '',
+  navShortcut = { label: 'TV', href: '/live-tv' },
   sandboxEmbeds = true,
   mediaRelay = null,
   disableEmbedSources = false,
@@ -766,7 +847,8 @@ function buildSiteTweaks({
   var ACCENT = ${JSON.stringify(String(accent))};
 `);
   if (localVip) parts.push(buildLocalVip());
-  if (hideSiteBranding) parts.push(buildHideBranding());
+  if (hideSiteBranding) parts.push(buildHideBranding(brandIconUrl));
+  if (navShortcut && navShortcut.href) parts.push(buildNavShortcut(navShortcut));
   if (hideCommunityLinks) parts.push(buildCommunityLinksHiding());
   // Toujours inclus quand une expression est fournie, y compris 'false' : le
   // bloc restaure alors le réglage précédent s'il avait été forcé.

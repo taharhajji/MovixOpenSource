@@ -138,6 +138,11 @@ function bootstrap() {
       try {
         if (config.hideSiteBranding) themeCss = fs.readFileSync(path.join(__dirname, 'injection', 'theme.css'), 'utf8');
       } catch (_) { /* pas de thème : palette du site */ }
+      // Icône de la marque dans l'en-tête (PNG 96 px embarqué en data: URL).
+      let brandIconUrl = '';
+      try {
+        brandIconUrl = `data:image/png;base64,${fs.readFileSync(path.join(__dirname, 'injection', 'brand-icon.png')).toString('base64')}`;
+      } catch (_) { /* pas d'icône : nom seul */ }
       injectionCode = buildInjectedJavaScript({
         version: app.getVersion(),
         userscriptSource,
@@ -147,6 +152,7 @@ function bootstrap() {
         localVip: config.localVipEnabled,
         swiftfluxSource: config.swiftfluxSource,
         themeCss,
+        brandIconUrl,
       });
       console.log(`[movix] thème ${themeCss ? `appliqué (${(themeCss.length / 1024).toFixed(0)} Ko)` : 'du site'}`);
       console.log(`[movix] source SwiftFlux (vérification robot) : ${config.swiftfluxSource}`);

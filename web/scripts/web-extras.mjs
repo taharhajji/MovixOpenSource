@@ -40,7 +40,6 @@ export function buildWebExtras({ appName, accent, accentSoft, background, iconUr
   var style = document.createElement('style');
   style.id = 'mewflix-web-extras-style';
   style.textContent = [
-    '.orbit-brand-icon { width: 1.55em; height: 1.55em; border-radius: 24%; margin-right: .45em; vertical-align: middle; box-shadow: 0 2px 10px rgba(0,0,0,.35); flex: none; }',
     '.mwx-fab { position: fixed; z-index: 60; right: max(16px, env(safe-area-inset-right)); bottom: calc(18px + env(safe-area-inset-bottom)); display: inline-flex; align-items: center; gap: .5em; padding: 12px 18px; border-radius: 999px; border: 0; cursor: pointer; font: 700 15px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: ' + BG + '; background: ' + ACCENT + '; box-shadow: 0 10px 30px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.08) inset; transition: transform .15s ease, opacity .25s ease; }',
     '.mwx-fab:hover { transform: translateY(-2px); } .mwx-fab:active { transform: scale(.97); }',
     '.mwx-fab[hidden] { display: none; }',
@@ -80,26 +79,7 @@ export function buildWebExtras({ appName, accent, accentSoft, background, iconUr
   }
 
   // ---- Logo dans l'en-tête (le nom est posé par les retouches partagées) ----
-  // Le site affiche son nom soit en texte, soit en SVG remplacé par un
-  // <span class="orbit-brand"> : dans les deux cas le lien d'accueil de
-  // l'en-tête porte le nom de l'app, l'icône se place devant.
-  function placeLogo() {
-    var links = document.querySelectorAll('header a[href="/"]');
-    for (var i = 0; i < links.length; i++) {
-      var link = links[i];
-      if (link.querySelector('.orbit-brand-icon')) continue;
-      var text = (link.textContent || '').replace(/\\s+/g, ' ').trim();
-      if (text.toUpperCase() !== APP.toUpperCase()) continue;
-      var img = document.createElement('img');
-      img.className = 'orbit-brand-icon';
-      img.src = ICON;
-      img.alt = '';
-      img.decoding = 'async';
-      link.style.display = 'inline-flex';
-      link.style.alignItems = 'center';
-      link.insertBefore(img, link.firstChild);
-    }
-  }
+  // (Logo de l'en-tête : posé par les retouches partagées, option brandIconUrl.)
 
   // ---- Service worker ------------------------------------------------------
   // Le site enregistre lui-même /sw.js au chargement ; ici on ne fait
@@ -336,14 +316,12 @@ export function buildWebExtras({ appName, accent, accentSoft, background, iconUr
   window.addEventListener('popstate', function() { setTimeout(onRoute, 0); });
 
   function start() {
-    placeLogo();
     placeFab();
     placeTop();
     placeEmbedBanner();
     gateIframes(document.body);
     registerSw();
     new MutationObserver(function(mutations) {
-      placeLogo();
       if (!isWatchPage()) return;
       for (var i = 0; i < mutations.length; i++) {
         var added = mutations[i].addedNodes;

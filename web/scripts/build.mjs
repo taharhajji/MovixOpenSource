@@ -192,6 +192,7 @@ const tweaks = buildSiteTweaks({
   popupSafeHosts: SAFE_EXTERNAL_HOSTS,
   mediaRelay: { path: RELAY_PATH, hosts: DEFAULT_RELAY_HOSTS },
   disableEmbedSources: true,
+  brandIconUrl: '/mewflix-icon-192.png',
 });
 const tweaksTag = `<script id="mewflix-site-tweaks">${tweaks.replace(/<\/script/gi, '<\\/script')}</script>`;
 if (!/<script id="mewflix-site-tweaks">/.test(html)) {

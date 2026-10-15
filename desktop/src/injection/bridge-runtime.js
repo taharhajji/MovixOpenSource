@@ -14,7 +14,7 @@
 
 const { buildSiteTweaks } = require('./site-tweaks');
 
-function buildBridgeRuntime({ version, appName = 'MEWFLIX', accent = '#dbe6f6', hideSiteBranding = false, localVip = false, swiftfluxSource = 'keep', themeCss = '' }) {
+function buildBridgeRuntime({ version, appName = 'MEWFLIX', accent = '#dbe6f6', hideSiteBranding = false, localVip = false, swiftfluxSource = 'keep', themeCss = '', brandIconUrl = '' }) {
   // Retouches de site partagées avec l'app mobile. Le popup pub suit l'état du
   // blocage des pubs, lu sur le pont natif au chargement de la page.
   const siteTweaks = buildSiteTweaks({
@@ -26,6 +26,7 @@ function buildBridgeRuntime({ version, appName = 'MEWFLIX', accent = '#dbe6f6', 
     swiftfluxSource,
     storagePrefix: 'orbit_desktop',
     themeCss,
+    brandIconUrl,
   });
   return `
 (function() {
@@ -280,8 +281,8 @@ ${siteTweaks}
 /**
  * Assemble le script complet : pont GM puis userscript.
  */
-function buildInjectedJavaScript({ version, userscriptSource, appName, accent, hideSiteBranding, localVip, swiftfluxSource, themeCss }) {
-  return `${buildBridgeRuntime({ version, appName, accent, hideSiteBranding, localVip, swiftfluxSource, themeCss })}
+function buildInjectedJavaScript({ version, userscriptSource, appName, accent, hideSiteBranding, localVip, swiftfluxSource, themeCss, brandIconUrl }) {
+  return `${buildBridgeRuntime({ version, appName, accent, hideSiteBranding, localVip, swiftfluxSource, themeCss, brandIconUrl })}
 
 // --- Userscript Movix ---
 (function() {
