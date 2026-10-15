@@ -103,12 +103,46 @@ function fileNameOf(absoluteUrl) {
  * de chemin : le lecteur du site et hls.js décident du traitement d'après
  * l'extension (les sous-titres .vtt déclarés en direct sont enveloppés).
  */
-export function relayUrlFor(absoluteUrl, relayPath = RELAY_PATH, signature = '') {
+export function relayUrlFor(absoluteUrl, relayPath = RELAY_PATH, signature = '', headersParam = '') {
   const name = encodeURIComponent(fileNameOf(absoluteUrl));
-  return `${relayPath}/${name}?u=${encodeURIComponent(absoluteUrl)}${signature ? `&s=${signature}` : ''}`;
+  return `${relayPath}/${name}?u=${encodeURIComponent(absoluteUrl)}`
+    + (headersParam ? `&h=${encodeURIComponent(headersParam)}` : '')
+    + (signature ? `&s=${signature}` : '');
 }
-export async function signedRelayUrlFor(absoluteUrl, relayPath, secret) {
-  return relayUrlFor(absoluteUrl, relayPath, await signUrl(absoluteUrl, secret));
+
+// --- En-têtes amont (TV en direct) ---------------------------------------------
+// Certains flux exigent un User-Agent ou un Referer précis (Vavoo : « VAVOO/2.6 »).
+// Ils voyagent dans le paramètre h (JSON encodé en base64url), couverts par la
+// signature (u + "\n" + h) : seules les URL signées par le relais /api/* peuvent
+// les porter, et seuls ces trois en-têtes sont transmis.
+const UPSTREAM_HEADER_KEYS = ['user-agent', 'referer', 'origin'];
+export function encodeHeadersParam(headers) {
+  const clean = {};
+  for (const [key, value] of Object.entries(headers || {})) {
+    const k = String(key).toLowerCase();
+    if (UPSTREAM_HEADER_KEYS.includes(k) && typeof value === 'string' && value) clean[k] = value;
+  }
+  if (!Object.keys(clean).length) return '';
+  return btoa(unescape(encodeURIComponent(JSON.stringify(clean)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+export function decodeHeadersParam(param) {
+  if (!param) return {};
+  try {
+    const b64 = String(param).replace(/-/g, '+').replace(/_/g, '/');
+    const parsed = JSON.parse(decodeURIComponent(escape(atob(b64))));
+    const clean = {};
+    for (const [key, value] of Object.entries(parsed || {})) {
+      const k = String(key).toLowerCase();
+      if (UPSTREAM_HEADER_KEYS.includes(k) && typeof value === 'string' && value.length <= 512) clean[k] = value;
+    }
+    return clean;
+  } catch (_) { return {}; }
+}
+export function signedPayload(absoluteUrl, headersParam = '') {
+  return headersParam ? `${absoluteUrl}\n${headersParam}` : absoluteUrl;
+}
+export async function signedRelayUrlFor(absoluteUrl, relayPath, secret, headersParam = '') {
+  return relayUrlFor(absoluteUrl, relayPath, await signUrl(signedPayload(absoluteUrl, headersParam), secret), headersParam);
 }
 
 // Découpe une playlist en morceaux : texte conservé tel quel, et URI à
@@ -152,12 +186,12 @@ export function rewritePlaylist(text, baseUrl, relayPath = RELAY_PATH) {
   return joinPlaylist(parts, resolved);
 }
 /** Réécriture avec URL signées quand un secret est configuré. */
-export async function rewritePlaylistSigned(text, baseUrl, relayPath = RELAY_PATH, secret = '') {
+export async function rewritePlaylistSigned(text, baseUrl, relayPath = RELAY_PATH, secret = '', headersParam = '') {
   if (!secret) return rewritePlaylist(text, baseUrl, relayPath);
   const parts = splitPlaylist(text);
   const resolved = await Promise.all(parts.filter((p) => p.uri !== undefined).map(async (p) => {
     const abs = absoluteOf(p.uri, baseUrl);
-    return abs ? signedRelayUrlFor(abs, relayPath, secret) : p.uri;
+    return abs ? signedRelayUrlFor(abs, relayPath, secret, headersParam) : p.uri;
   }));
   return joinPlaylist(parts, resolved);
 }
@@ -191,6 +225,7 @@ export default async function handler(request) {
   const url = new URL(request.url);
   const raw = url.searchParams.get('u') || '';
   const signature = url.searchParams.get('s') || '';
+  const headersParam = url.searchParams.get('h') || '';
   let target;
   try {
     target = new URL(raw);
@@ -198,14 +233,16 @@ export default async function handler(request) {
     return json(400, { error: 'bad_url' });
   }
   if (target.protocol !== 'https:' && target.protocol !== 'http:') return json(400, { error: 'bad_url' });
-  const allowed = hostAllowed(target.hostname, cfg.hosts) || await verifySignature(target.href, signature, cfg.secret);
+  const signed = await verifySignature(signedPayload(target.href, headersParam), signature, cfg.secret);
+  const allowed = signed || (!headersParam && hostAllowed(target.hostname, cfg.hosts));
   if (!allowed) return json(403, { error: 'host_not_relayed', host: target.hostname });
+  const upstreamHeaders = signed ? decodeHeadersParam(headersParam) : {};
 
   // Relais externe configuré (Worker Cloudflare) : on lui passe la main.
   const origin = publicOrigin(request);
   if (cfg.base && cfg.base !== origin) {
-    const sig = signature || await signUrl(target.href, cfg.secret);
-    return Response.redirect(`${cfg.base}${relayUrlFor(target.href, RELAY_PATH, sig)}`, 302);
+    const sig = signature || await signUrl(signedPayload(target.href, headersParam), cfg.secret);
+    return Response.redirect(`${cfg.base}${relayUrlFor(target.href, RELAY_PATH, sig, headersParam)}`, 302);
   }
 
   const headers = new Headers();
@@ -214,6 +251,7 @@ export default async function handler(request) {
     if (value) headers.set(name, value);
   }
   headers.set('user-agent', BROWSER_UA);
+  for (const [key, value] of Object.entries(upstreamHeaders)) headers.set(key, value);
   if (!headers.has('accept')) headers.set('accept', '*/*');
 
   let upstream;
@@ -233,7 +271,7 @@ export default async function handler(request) {
   const contentType = upstream.headers.get('content-type') || '';
   if (upstream.ok && request.method === 'GET' && isPlaylist(upstream.url || target.href, contentType)) {
     const text = await upstream.text();
-    const body = await rewritePlaylistSigned(text, upstream.url || target.href, `${origin}${RELAY_PATH}`, cfg.secret);
+    const body = await rewritePlaylistSigned(text, upstream.url || target.href, `${origin}${RELAY_PATH}`, cfg.secret, signed ? headersParam : '');
     out.delete('content-length');
     out.delete('content-range');
     out.set('content-type', 'application/vnd.apple.mpegurl');

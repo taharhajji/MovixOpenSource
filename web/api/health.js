@@ -40,8 +40,14 @@ export default async function handler() {
     probe(`${UPSTREAM}/api/check-vip`, { headers: { 'user-agent': 'MewflixHealth/1.0' } }),
     probe(CDN_PROBE, { method: 'HEAD', headers: { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36' } }),
   ]);
+  let egressIp = null;
+  try {
+    const r = await fetch('https://api64.ipify.org?format=json', { signal: AbortSignal.timeout(4000) });
+    egressIp = (await r.json()).ip || null;
+  } catch (_) { /* diagnostic seulement */ }
   const body = {
     status: api.ok && cdn.ok ? 'ok' : api.ok ? 'degraded' : 'down',
+    egressIp,
     checkedAt: new Date().toISOString(),
     api: { ...api, upstream: UPSTREAM },
     cdn: { ...cdn, probe: CDN_PROBE },

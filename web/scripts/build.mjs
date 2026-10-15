@@ -36,7 +36,11 @@ function arg(name, fallback) {
 // `/api/…` en relatif, donc le même dist sert n'importe quelle URL Vercel ou
 // un domaine personnalisé. Les quatre points du code qui retombent sur
 // `http://localhost:25565` quand la base est vide sont corrigés après build.
-const ORIGIN = arg('origin', process.env.MEWFLIX_ORIGIN || '').replace(/\/+$/, '');
+// … sauf que la page TV en direct construit `new URL(\`${API}/api/livetv/…\`)`,
+// qui exige une base absolue : par défaut l'URL publique du site (identique à
+// SITE_URL). `--origin ''` redonne un build relatif.
+const SITE_DEFAULT = (process.env.MEWFLIX_SITE_URL || 'https://mewflix-app.vercel.app').replace(/\/+$/, '');
+const ORIGIN = arg('origin', process.env.MEWFLIX_ORIGIN || SITE_DEFAULT).replace(/\/+$/, '');
 const UPSTREAM = arg('upstream', process.env.UPSTREAM_API || 'https://api.movix.luxe').replace(/\/+$/, '');
 const SKIP_VITE = process.argv.includes('--skip-vite');
 // Identifiant de build (cache du service worker, console) : sha git court + horodatage.

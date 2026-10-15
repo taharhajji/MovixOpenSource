@@ -84,3 +84,17 @@ CDN, côté team. Pour couper le relais : retirer `mediaRelay` dans `scripts/bui
   activer avec `MEDIA_RELAY_BASE`, voir son README.
 
 Tests : `node --test web/tests/*.test.mjs` (relais, signature, thème) et `cd desktop && npm test`.
+
+## TV en direct (15 octobre 2026)
+
+- La page TV construit `new URL()` à partir de la base d'API : le build utilise désormais
+  une base **absolue** (`--origin`, défaut = URL publique du site) au lieu d'une base relative.
+- Les flux « directs » renvoyés par `/api/livetv/stream/*` (Vavoo : IP nue, http, port 8008,
+  User-Agent `VAVOO/2.6`) sont réécrits vers le relais média avec leurs en-têtes signés
+  (paramètre `h`, couvert par la signature). Les lecteurs en iframe (Northlive, Streamed…) restent tels quels.
+- **Vavoo** refuse les adresses IP des hébergeurs (403 depuis Vercel, 200 depuis une box) :
+  ces chaînes ne passent qu'avec l'app Windows (le userscript les lit depuis l'IP du spectateur),
+  comme avec l'extension sur Movix. Northlive, FCTV et Streamed (lecteurs en iframe) fonctionnent sur le web.
+- Les chaînes **IPTV** (onglet « IPTV Web ») sont réservées par l'API aux clés VIP réelles
+  (`x-access-key`) : le statut VIP local de MEWFLIX ne suffit pas ; il faut une clé générée
+  par un administrateur de l'API (`POST /admin/vip-keys`), à saisir dans le site.

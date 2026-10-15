@@ -72,3 +72,43 @@ test('sources de flux : URL réécrites vers le relais, signées avec secret, li
   assert.match(noSecret.sources[0].url, /^https:\/\/site\.test\/media\/master\.m3u8\?u=[^&]+$/);
   assert.equal(noSecret.sources[1].url, 'https://nouveau-cdn.example/m.m3u8');
 });
+
+test('en-têtes amont : encodés, signés avec l’URL, transmis seulement sur URL signée', async (t) => {
+  const { encodeHeadersParam, decodeHeadersParam, signedPayload } = await import('../api/media.js');
+  const { liveStreamHeaders } = await import('../api/proxy.js');
+  const h = encodeHeadersParam({ 'User-Agent': 'VAVOO/2.6', Referer: 'https://r.example/', 'X-Evil': 'non' });
+  assert.deepEqual(decodeHeadersParam(h), { 'user-agent': 'VAVOO/2.6', referer: 'https://r.example/' });
+  assert.equal(encodeHeadersParam({}), '');
+  assert.equal(decodeHeadersParam('@@@').constructor, Object);
+
+  configureRelay({ secret: SECRET, hosts: ['finepulfe.xyz'], base: '' });
+  t.after(() => configureRelay({ secret: '', hosts: undefined, base: '' }));
+  const target = 'http://198.51.100.20:8008/sunshine/x/hls/index.m3u8';
+  // Hôte de la liste close mais paramètre h sans signature : refusé.
+  const unsigned = await handler(new Request(`https://x.test/media/index.m3u8?u=${encodeURIComponent('https://free.finepulfe.xyz/a.m3u8')}&h=${h}`));
+  assert.equal(unsigned.status, 403);
+  // Signature calculée sur u seul alors que h est présent : refusée.
+  const wrongSig = await signUrl(target, SECRET);
+  const mismatch = await handler(new Request(`https://x.test/media/index.m3u8?u=${encodeURIComponent(target)}&h=${h}&s=${wrongSig}`));
+  assert.equal(mismatch.status, 403);
+  // Signature sur u + h : acceptée (le fetch amont échoue ensuite, hôte fictif).
+  const goodSig = await signUrl(signedPayload(target, h), SECRET);
+  const accepted = await handler(new Request(`https://x.test/media/index.m3u8?u=${encodeURIComponent(target)}&h=${h}&s=${goodSig}`));
+  assert.notEqual(accepted.status, 403);
+
+  assert.deepEqual(liveStreamHeaders({ url: target, _directPlay: true }), { 'user-agent': 'VAVOO/2.6' });
+  assert.deepEqual(liveStreamHeaders({ url: 'https://cdn.example/a.m3u8', referer: 'https://site.example/p' }), { referer: 'https://site.example/p', origin: 'https://site.example' });
+  assert.deepEqual(liveStreamHeaders({ url: 'https://cdn.example/a.m3u8' }), {});
+});
+
+test('TV en direct : flux directs relayés avec en-têtes, lecteurs embed laissés intacts', async () => {
+  const payload = { streams: [
+    { title: 'Vavoo', url: 'http://198.51.100.20:8008/sunshine/x/hls/index.m3u8', _directPlay: true },
+    { title: 'northlive', url: 'https://northlive.lol/api/v1/tv/x/player?api_key=k', _isEmbed: true },
+  ] };
+  const { liveStreamHeaders } = await import('../api/proxy.js');
+  await rewriteStreamSources(payload, 'https://site.test/media', { secret: SECRET, hosts: ['finepulfe.xyz'] }, liveStreamHeaders);
+  assert.match(payload.streams[0].url, /^https:\/\/site\.test\/media\/index\.m3u8\?u=.*&h=[A-Za-z0-9_-]+&s=[0-9a-f]{32}$/);
+  assert.equal(payload.streams[0]._directPlay, true);
+  assert.equal(payload.streams[1].url, 'https://northlive.lol/api/v1/tv/x/player?api_key=k');
+});

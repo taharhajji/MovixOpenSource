@@ -20,7 +20,7 @@
  * conservés, cookies et en-têtes de l'API renvoyés tels quels.
  */
 
-import { RELAY_PATH, hostAllowed, publicOrigin, relayConfig, relayUrlFor, signUrl } from './media.js';
+import { RELAY_PATH, encodeHeadersParam, hostAllowed, publicOrigin, relayConfig, relayUrlFor, signUrl, signedPayload } from './media.js';
 
 export const config = { runtime: 'edge' };
 
@@ -72,23 +72,26 @@ async function fetchWithRetry(target, init, retriable) {
  * de la liste close). Le lecteur voit ainsi des adresses de son propre
  * domaine : plus de blocage Origin, et un changement de CDN passe inaperçu.
  */
-export async function rewriteStreamSources(payload, relayBase, cfg) {
+export async function rewriteStreamSources(payload, relayBase, cfg, headersFor = () => ({})) {
   let changed = false;
-  async function relayed(url) {
+  async function relayed(url, owner) {
     if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return url;
     // Signée sur la forme normalisée (new URL().href), celle que le relais vérifie.
     let normalized;
     try { normalized = new URL(url); } catch (_) { return url; }
+    const headersParam = cfg.secret ? encodeHeadersParam(headersFor(owner) || {}) : '';
     if (!cfg.secret && !hostAllowed(normalized.hostname, cfg.hosts)) return url;
     changed = true;
-    return `${relayBase}${relayUrlFor(normalized.href, '', await signUrl(normalized.href, cfg.secret))}`;
+    const signature = await signUrl(signedPayload(normalized.href, headersParam), cfg.secret);
+    return `${relayBase}${relayUrlFor(normalized.href, '', signature, headersParam)}`;
   }
   async function walk(node) {
     if (Array.isArray(node)) { for (const item of node) await walk(item); return; }
     if (!node || typeof node !== 'object') return;
+    if (node._isEmbed === true) return; // lecteur en iframe : rien à relayer
     for (const key of Object.keys(node)) {
       const value = node[key];
-      if (key === 'url' && typeof value === 'string') node[key] = await relayed(value);
+      if (key === 'url' && typeof value === 'string') node[key] = await relayed(value, node);
       else if (value && typeof value === 'object') await walk(value);
     }
   }
@@ -98,6 +101,27 @@ export async function rewriteStreamSources(payload, relayBase, cfg) {
 
 function isStreamSourcesPath(apiPath) {
   return /^purstream\/(movie|tv)\//.test(apiPath) && /\/stream(\?|$)/.test(apiPath);
+}
+function isLiveStreamPath(apiPath) {
+  return /^livetv\/stream\//.test(apiPath);
+}
+
+// TV en direct : les flux Vavoo (IP nue, http, port 8008) exigent le
+// User-Agent « VAVOO/2.6 » ; d'autres sources imposent un Referer. Sans
+// extension, un navigateur ne peut ni poser ces en-têtes ni charger du http
+// depuis une page https : le relais s'en charge, avec les en-têtes signés.
+const VAVOO_USER_AGENT = 'VAVOO/2.6';
+export function liveStreamHeaders(stream) {
+  const headers = {};
+  if (!stream || typeof stream !== 'object') return headers;
+  const url = typeof stream.url === 'string' ? stream.url : '';
+  if (typeof stream.referer === 'string' && stream.referer) {
+    headers.referer = stream.referer;
+    try { headers.origin = new URL(stream.referer).origin; } catch (_) { /* referer invalide */ }
+  }
+  if (typeof stream.userAgent === 'string' && stream.userAgent) headers['user-agent'] = stream.userAgent;
+  else if (stream._directPlay === true || url.includes('/sunshine/')) headers['user-agent'] = VAVOO_USER_AGENT;
+  return headers;
 }
 
 export default async function handler(request) {
@@ -168,13 +192,14 @@ export default async function handler(request) {
   }
 
   // Flux « pulse » : adresses réécrites vers le relais média.
-  if (upstream.status === 200 && request.method === 'GET' && isStreamSourcesPath(apiPath)
+  const liveStreams = isLiveStreamPath(apiPath);
+  if (upstream.status === 200 && request.method === 'GET' && (isStreamSourcesPath(apiPath) || liveStreams)
       && /json/i.test(upstream.headers.get('content-type') || '')) {
     try {
       const payload = await upstream.clone().json();
       const cfg = relayConfig();
       const relayBase = `${cfg.base || publicOrigin(request)}${RELAY_PATH}`;
-      await rewriteStreamSources(payload, relayBase, cfg);
+      await rewriteStreamSources(payload, relayBase, cfg, liveStreams ? liveStreamHeaders : undefined);
       responseHeaders.set('content-type', 'application/json; charset=utf-8');
       responseHeaders.set('cache-control', 'no-store');
       responseHeaders.set('x-mewflix-relay-sources', '1');
