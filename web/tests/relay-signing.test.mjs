@@ -112,3 +112,47 @@ test('TV en direct : flux directs relayés avec en-têtes, lecteurs embed laiss�
   assert.equal(payload.streams[0]._directPlay, true);
   assert.equal(payload.streams[1].url, 'https://northlive.lol/api/v1/tv/x/player?api_key=k');
 });
+
+test('Northlive : flux HLS extrait de la page lecteur, relayé signé devant l’iframe', async () => {
+  const { addNorthliveDirectStreams } = await import('../api/proxy.js');
+  const player = 'https://northlive.lol/api/v1/tv/auto-moto-hd-s/player?api_key=ff_test';
+  const calls = [];
+  const fakeFetch = async (url, init = {}) => {
+    calls.push({ url: String(url), method: init.method || 'GET', body: init.body });
+    if (String(url) === player) return new Response('<script>const PLAY_TOKEN = "TOKEN123";</script>', { status: 200 });
+    if (String(url).includes('route=play_url')) return new Response(JSON.stringify({ success: true, url: 'https://northlive.lol/api/tv_proxy.php?tok=abc', direct: false }), { status: 200 });
+    return new Response('nope', { status: 404 });
+  };
+  const payload = { streams: [{ title: 'northlive', url: player, originalUrl: player, _isEmbed: true, behaviorHints: { notWebReady: false } }] };
+  const changed = await addNorthliveDirectStreams(payload, 'https://site.test/media', { secret: SECRET, hosts: ['finepulfe.xyz'] }, fakeFetch);
+  assert.equal(changed, true);
+  assert.equal(payload.streams.length, 2);
+  const direct = payload.streams[0];
+  assert.equal(direct._directPlay, true);
+  assert.equal(direct._isEmbed, undefined);
+  assert.match(direct.url, /^https:\/\/site\.test\/media\/tv_proxy\.php\?u=.*&h=[A-Za-z0-9_-]+&s=[0-9a-f]{32}$/);
+  const u = new URL(direct.url).searchParams.get('u');
+  assert.equal(u, 'https://northlive.lol/api/tv_proxy.php?tok=abc&pt=TOKEN123');
+  assert.equal(payload.streams[1]._isEmbed, true);
+  const playCall = calls.find((c) => c.url.includes('route=play_url'));
+  assert.deepEqual(JSON.parse(playCall.body), { slug: 'auto-moto-hd-s', api_key: 'ff_test', play_token: 'TOKEN123' });
+
+  // Sans secret : rien n’est ajouté (le relais ne saurait pas signer les en-têtes).
+  const untouched = { streams: [{ url: player, _isEmbed: true }] };
+  assert.equal(await addNorthliveDirectStreams(untouched, 'https://site.test/media', { secret: '', hosts: [] }, fakeFetch), false);
+});
+
+test('Northlive : le flux extrait n’est pas relayé une seconde fois', async () => {
+  const { addNorthliveDirectStreams, liveStreamHeaders } = await import('../api/proxy.js');
+  const player = 'https://northlive.lol/api/v1/tv/x/player?api_key=k';
+  const fakeFetch = async (url) => String(url) === player
+    ? new Response('<script>const PLAY_TOKEN = "T";</script>')
+    : new Response(JSON.stringify({ success: true, url: 'https://northlive.lol/api/tv_proxy.php?tok=z' }));
+  const cfg = { secret: SECRET, hosts: ['finepulfe.xyz'] };
+  const payload = { streams: [{ title: 'northlive', url: player, _isEmbed: true }] };
+  await addNorthliveDirectStreams(payload, 'https://site.test/media', cfg, fakeFetch);
+  const before = payload.streams[0].url;
+  await rewriteStreamSources(payload, 'https://site.test/media', cfg, liveStreamHeaders);
+  assert.equal(payload.streams[0].url, before);
+  assert.equal(payload.streams[1].url, player);
+});

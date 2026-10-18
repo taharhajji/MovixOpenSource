@@ -95,6 +95,11 @@ Tests : `node --test web/tests/*.test.mjs` (relais, signature, thème) et `cd de
 - **Vavoo** refuse les adresses IP des hébergeurs (403 depuis Vercel, 200 depuis une box) :
   ces chaînes ne passent qu'avec l'app Windows (le userscript les lit depuis l'IP du spectateur),
   comme avec l'extension sur Movix. Northlive, FCTV et Streamed (lecteurs en iframe) fonctionnent sur le web.
+- **Northlive sans publicité** (19 oct.) : la page lecteur en iframe porte ses propres régies. Le
+  relais `/api/*` lit cette page, en tire le jeton de lecture, appelle `play_url` et place le flux
+  HLS obtenu (relayé, signé, Referer requis) en première source : le lecteur du site le joue
+  lui-même. L'iframe reste en secours (« Changer de source »). Jetons valables ~1 h, extraction
+  mise en cache 4 min par chaîne.
 - Les chaînes **IPTV** (onglet « IPTV Web ») sont réservées par l'API aux clés VIP réelles
   (`x-access-key`) : le statut VIP local de MEWFLIX ne suffit pas ; il faut une clé générée
   par un administrateur de l'API (`POST /admin/vip-keys`), à saisir dans le site.

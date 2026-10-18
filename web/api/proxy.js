@@ -79,6 +79,8 @@ export async function rewriteStreamSources(payload, relayBase, cfg, headersFor =
     // Signée sur la forme normalisée (new URL().href), celle que le relais vérifie.
     let normalized;
     try { normalized = new URL(url); } catch (_) { return url; }
+    // Déjà relayée (flux extrait, ou réponse réécrite deux fois) : telle quelle.
+    if (normalized.href.startsWith(`${relayBase}/`)) return url;
     const headersParam = cfg.secret ? encodeHeadersParam(headersFor(owner) || {}) : '';
     if (!cfg.secret && !hostAllowed(normalized.hostname, cfg.hosts)) return url;
     changed = true;
@@ -89,6 +91,7 @@ export async function rewriteStreamSources(payload, relayBase, cfg, headersFor =
     if (Array.isArray(node)) { for (const item of node) await walk(item); return; }
     if (!node || typeof node !== 'object') return;
     if (node._isEmbed === true) return; // lecteur en iframe : rien à relayer
+    if (node._mewflixExtracted === true) return; // déjà relayé et signé
     for (const key of Object.keys(node)) {
       const value = node[key];
       if (key === 'url' && typeof value === 'string') node[key] = await relayed(value, node);
@@ -111,6 +114,76 @@ function isLiveStreamPath(apiPath) {
 // extension, un navigateur ne peut ni poser ces en-têtes ni charger du http
 // depuis une page https : le relais s'en charge, avec les en-têtes signés.
 const VAVOO_USER_AGENT = 'VAVOO/2.6';
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+
+// Northlive : l'API renvoie une page lecteur à mettre en iframe, avec ses
+// propres publicités. La page expose un jeton de lecture (PLAY_TOKEN) et une
+// clé ; un appel play_url donne l'adresse HLS, lisible avec un Referer. On la
+// relaie signée, en première position : le lecteur du site la joue lui-même,
+// sans publicité. L'iframe reste en secours.
+const NORTHLIVE_PLAYER_RE = /^https:\/\/northlive\.lol\/api\/v1\/tv\/([^/?#]+)\/player\?/i;
+const northliveCache = new Map();
+const NORTHLIVE_CACHE_MS = 4 * 60 * 1000;
+
+export async function extractNorthlive(playerUrl, fetchImpl = fetch) {
+  const m = NORTHLIVE_PLAYER_RE.exec(playerUrl);
+  if (!m) return null;
+  const cached = northliveCache.get(playerUrl);
+  if (cached && cached.until > Date.now()) return cached.value;
+  const slug = decodeURIComponent(m[1]);
+  const apiKey = new URL(playerUrl).searchParams.get('api_key') || '';
+  const headers = { 'user-agent': BROWSER_UA, referer: playerUrl, origin: 'https://northlive.lol' };
+  const page = await fetchImpl(playerUrl, { headers: { 'user-agent': BROWSER_UA, accept: 'text/html' } });
+  if (!page.ok) return null;
+  const html = await page.text();
+  const token = /const PLAY_TOKEN = "([^"]*)"/.exec(html);
+  const playToken = token ? token[1] : '';
+  const body = { slug };
+  if (apiKey) body.api_key = apiKey;
+  if (playToken) body.play_token = playToken;
+  const res = await fetchImpl(`https://northlive.lol/api/v1/index.php?route=play_url${apiKey ? `&api_key=${encodeURIComponent(apiKey)}` : ''}`, {
+    method: 'POST',
+    headers: { ...headers, 'content-type': 'application/json', ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) return null;
+  let data;
+  try { data = await res.json(); } catch (_) { return null; }
+  if (!data || !data.success || typeof data.url !== 'string') return null;
+  let url = data.url;
+  if (playToken && !/[?&]pt=/.test(url)) url += `${url.includes('?') ? '&' : '?'}pt=${encodeURIComponent(playToken)}`;
+  const value = { url, headers, direct: Boolean(data.direct) };
+  northliveCache.set(playerUrl, { value, until: Date.now() + NORTHLIVE_CACHE_MS });
+  if (northliveCache.size > 200) northliveCache.delete(northliveCache.keys().next().value);
+  return value;
+}
+
+/** Ajoute, devant chaque lecteur Northlive en iframe, le flux HLS extrait (relayé, signé). */
+export async function addNorthliveDirectStreams(payload, relayBase, cfg, fetchImpl = fetch) {
+  if (!payload || !Array.isArray(payload.streams) || !cfg.secret) return false;
+  const additions = [];
+  for (const stream of payload.streams) {
+    if (!stream || typeof stream !== 'object' || !stream._isEmbed || typeof stream.url !== 'string') continue;
+    if (!NORTHLIVE_PLAYER_RE.test(stream.url)) continue;
+    let extracted = null;
+    try { extracted = await extractNorthlive(stream.url, fetchImpl); } catch (_) { extracted = null; }
+    if (!extracted) continue;
+    const headersParam = encodeHeadersParam(extracted.headers);
+    const href = new URL(extracted.url).href;
+    const signature = await signUrl(signedPayload(href, headersParam), cfg.secret);
+    additions.push({
+      title: `${stream.title || 'northlive'} · sans pub`,
+      url: `${relayBase}${relayUrlFor(href, '', signature, headersParam)}`,
+      _directPlay: true,
+      _mewflixExtracted: true,
+      behaviorHints: { notWebReady: false },
+    });
+  }
+  if (!additions.length) return false;
+  payload.streams = [...additions, ...payload.streams];
+  return true;
+}
+
 export function liveStreamHeaders(stream) {
   const headers = {};
   if (!stream || typeof stream !== 'object') return headers;
@@ -199,6 +272,7 @@ export default async function handler(request) {
       const payload = await upstream.clone().json();
       const cfg = relayConfig();
       const relayBase = `${cfg.base || publicOrigin(request)}${RELAY_PATH}`;
+      if (liveStreams) await addNorthliveDirectStreams(payload, relayBase, cfg);
       await rewriteStreamSources(payload, relayBase, cfg, liveStreams ? liveStreamHeaders : undefined);
       responseHeaders.set('content-type', 'application/json; charset=utf-8');
       responseHeaders.set('cache-control', 'no-store');
