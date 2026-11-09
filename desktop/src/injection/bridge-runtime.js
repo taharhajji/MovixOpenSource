@@ -27,6 +27,10 @@ function buildBridgeRuntime({ version, appName = 'MEWFLIX', accent = '#dbe6f6', 
     storagePrefix: 'orbit_desktop',
     themeCss,
     brandIconUrl,
+    // Pas de bac à sable sur les iframes dans l'app : certains hébergeurs
+    // refusent de lire (« Sandbox not allowed »), et Electron bloque déjà
+    // nativement popups et navigations sortantes (navigationPolicy, main.js).
+    sandboxEmbeds: false,
   });
   return `
 (function() {

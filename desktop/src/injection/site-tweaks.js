@@ -434,7 +434,11 @@ function buildIframeSandbox(exemptHosts) {
   // et quelques services (Turnstile, YouTube) sont exemptés.
   (function sandboxEmbeds() {
     if (typeof HTMLIFrameElement === 'undefined' || typeof Element === 'undefined') return;
-    var SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-presentation allow-orientation-lock allow-pointer-lock';
+    // allow-popups : sans lui, plusieurs hébergeurs refusent de lire
+    // (« Sandbox not allowed »). Les popups ouverts héritent du bac à sable et
+    // ne peuvent toujours pas rediriger la page ; la navigation du cadre
+    // parent reste interdite.
+    var SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-presentation allow-popups allow-orientation-lock allow-pointer-lock';
     var EXEMPT = ${JSON.stringify(exemptHosts)};
     var MARK = 'data-orbit-sandbox';
     function exempt(hostname) {
