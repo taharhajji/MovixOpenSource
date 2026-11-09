@@ -6,3 +6,5 @@ dist/
 .env*
 .env.local
 .env.relay.local
+.wrangler/
+relay-worker/.wrangler/

@@ -13,15 +13,21 @@ Transfer » (10 Go/mois), et un dépassement peut mettre tout le projet en pause
 cd web/relay-worker
 npm install
 npx wrangler login                      # ouvre le navigateur
-npm run deploy                          # → https://mewflix-media-relay.<compte>.workers.dev
+npm run deploy                          # → https://mewflix-media-relay.mewflix.workers.dev
 npm run secret                          # colle la valeur de MEDIA_RELAY_SECRET (web/.env.relay.local)
 ```
 
-Puis côté Vercel, une variable d'environnement et un redéploiement :
+Déployé le 21 oct. 2026 sur https://mewflix-media-relay.mewflix.workers.dev.
+Cette adresse est la valeur par défaut de `DEFAULT_RELAY_BASE` dans
+`web/api/media.js` : un simple redéploiement Vercel suffit. La variable
+`MEDIA_RELAY_BASE` la remplace, et `MEDIA_RELAY_BASE=off` relaie de nouveau
+via Vercel.
+
+Pour forcer une autre adresse côté Vercel :
 
 ```bash
 cd web
-printf 'https://mewflix-media-relay.<compte>.workers.dev' | npx vercel env add MEDIA_RELAY_BASE production
+printf 'https://mewflix-media-relay.mewflix.workers.dev' | npx vercel env add MEDIA_RELAY_BASE production
 npx vercel build --prod && npx vercel deploy --prebuilt --prod
 ```
 
@@ -32,5 +38,5 @@ affiche « Relais externe ».
 ## Vérifier
 
 ```bash
-curl -s https://mewflix-media-relay.<compte>.workers.dev/health
+curl -s https://mewflix-media-relay.mewflix.workers.dev/health
 ```

@@ -89,6 +89,37 @@
         "channel": "latest"
       }
     ],
+    "linux": {
+      "category": "AudioVideo",
+      "icon": "build/icon.png",
+      "maintainer": "MEWFLIX <mewflix@example.invalid>",
+      "synopsis": "MEWFLIX — films, séries et TV en direct",
+      "executableName": "mewflix",
+      "target": [
+        {
+          "target": "deb",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0",
+        "libasound2"
+      ]
+    },
     "mac": {
       "category": "public.app-category.entertainment",
       "icon": "build/icon.icns",

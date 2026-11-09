@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import handler, {
-  configureRelay, relayConfig, signUrl, verifySignature, signedRelayUrlFor, rewritePlaylistSigned, rewritePlaylist,
+  configureRelay, relayConfig, DEFAULT_RELAY_BASE, signUrl, verifySignature, signedRelayUrlFor, rewritePlaylistSigned, rewritePlaylist,
 } from '../api/media.js';
 import { rewriteStreamSources } from '../api/proxy.js';
 
@@ -34,6 +34,22 @@ test('relais : hôte inconnu refusé sans signature, accepté avec une signature
   const sig = await signUrl(target, SECRET);
   const accepted = await handler(new Request(`https://x.test/media/master.m3u8?u=${encodeURIComponent(target)}&s=${sig}`));
   assert.notEqual(accepted.status, 403);
+});
+
+test('relais externe : Worker par défaut, MEDIA_RELAY_BASE le remplace, « off » relaie via Vercel', (t) => {
+  const saved = process.env.MEDIA_RELAY_BASE;
+  configureRelay({ base: null });
+  t.after(() => {
+    if (saved === undefined) delete process.env.MEDIA_RELAY_BASE;
+    else process.env.MEDIA_RELAY_BASE = saved;
+    configureRelay({ base: '' });
+  });
+  delete process.env.MEDIA_RELAY_BASE;
+  assert.equal(relayConfig().base, DEFAULT_RELAY_BASE);
+  process.env.MEDIA_RELAY_BASE = 'https://relay.example/';
+  assert.equal(relayConfig().base, 'https://relay.example');
+  process.env.MEDIA_RELAY_BASE = 'off';
+  assert.equal(relayConfig().base, '');
 });
 
 test('relais externe : redirection 302 vers MEDIA_RELAY_BASE avec signature', async (t) => {

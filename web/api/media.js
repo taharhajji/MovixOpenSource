@@ -21,11 +21,14 @@
  * MEDIA_RELAY_BASE (optionnel) : origine d'un relais externe (Worker
  * Cloudflare, sans quota de bande passante). Quand il est défini, la fonction
  * Vercel redirige vers lui au lieu de transférer la vidéo elle-même.
+ * Par défaut : le Worker déployé (DEFAULT_RELAY_BASE), pour que la vidéo ne
+ * consomme jamais le quota Vercel. MEDIA_RELAY_BASE=off relaie via Vercel.
  */
 
 export const config = { runtime: 'edge' };
 
 export const DEFAULT_RELAY_HOSTS = ['finepulfe.xyz'];
+export const DEFAULT_RELAY_BASE = 'https://mewflix-media-relay.mewflix.workers.dev';
 export const RELAY_PATH = '/media';
 
 const overrides = {};
@@ -33,10 +36,18 @@ const overrides = {};
 export function configureRelay({ secret, hosts, base } = {}) {
   if (secret !== undefined) overrides.secret = secret;
   if (hosts !== undefined) overrides.hosts = hosts;
-  if (base !== undefined) overrides.base = base;
+  if (base === null) delete overrides.base;
+  else if (base !== undefined) overrides.base = base;
 }
 function env(name) {
   try { return (typeof process !== 'undefined' && process.env && process.env[name]) || ''; } catch (_) { return ''; }
+}
+/** @returns {string} origine du relais externe, '' pour relayer via Vercel */
+function resolveRelayBase() {
+  if (overrides.base !== undefined) return String(overrides.base);
+  const fromEnv = env('MEDIA_RELAY_BASE').trim();
+  if (fromEnv.toLowerCase() === 'off') return '';
+  return fromEnv || DEFAULT_RELAY_BASE;
 }
 export function relayConfig() {
   const rawHosts = overrides.hosts !== undefined ? overrides.hosts : env('MEDIA_RELAY_HOSTS');
@@ -45,7 +56,7 @@ export function relayConfig() {
   return {
     secret: String(overrides.secret !== undefined ? overrides.secret : env('MEDIA_RELAY_SECRET') || ''),
     hosts: hosts.length ? hosts : DEFAULT_RELAY_HOSTS,
-    base: String(overrides.base !== undefined ? overrides.base : env('MEDIA_RELAY_BASE') || '').replace(/\/+$/, ''),
+    base: resolveRelayBase().replace(/\/+$/, ''),
   };
 }
 
