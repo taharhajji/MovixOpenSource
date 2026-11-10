@@ -11,3 +11,5 @@ smoke-play.png
 probe*.log
 smoke-loading.png
 dist-mac/
+dist-linux/
+dist-test/

@@ -202,3 +202,13 @@ Le site en ligne garde sa palette rouge ; l'app injecte `src/injection/theme.css
 `node web/scripts/extract-theme-css.mjs` à partir du build web) en fin de `<body>`.
 Désactivé quand « marque du site visible » est choisi (`--site-branding=0`).
 Le test de fumée vérifie la présence de la feuille (`theme: true`).
+
+## Mises à jour (releases GitHub du fork)
+
+Canal : https://github.com/taharhajji/MovixOpenSource/releases (`build.publish` = provider
+`github`). Publier une version = `gh release create vX.Y.Z` avec, pour Windows,
+`MEWFLIX-Setup-X.Y.Z.exe`, son `.blockmap` et `latest.yml` (electron-updater télécharge et
+installe au redémarrage) ; pour macOS les zips + `latest-mac.yml` ; pour Linux les `.deb`
+(macOS et Linux : l'app propose seulement le téléchargement, faute de signature Apple / AppImage).
+Vérifié le 10 nov. 2026 : une 1.0.1 a détecté et téléchargé une 1.0.2 de test toute seule.
+Builds macOS et Linux : `scripts/build-mac-wsl.sh`, `scripts/zip-mac-wsl.sh`, `scripts/build-linux-wsl.sh` (WSL Ubuntu).
