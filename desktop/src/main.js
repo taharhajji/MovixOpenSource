@@ -587,8 +587,70 @@ function bootstrap() {
 
   let autoUpdater = null;
 
+  // Windows : téléchargement et installation automatiques (electron-updater,
+  // releases GitHub du fork). macOS et Linux : l'installation automatique
+  // exige une app signée (Apple) ou un AppImage ; on vérifie la dernière
+  // release et on propose le téléchargement.
+  const RELEASES_API = 'https://api.github.com/repos/taharhajji/MovixOpenSource/releases/latest';
+  const RELEASES_PAGE = 'https://github.com/taharhajji/MovixOpenSource/releases/latest';
+
+  function versionParts(v) {
+    return String(v || '').replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+  }
+  function isNewerVersion(candidate, current) {
+    const a = versionParts(candidate);
+    const b = versionParts(current);
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+    }
+    return false;
+  }
+
+  async function checkReleasesPage(interactive) {
+    try {
+      const { net } = require('electron');
+      const res = await net.fetch(RELEASES_API, {
+        headers: { accept: 'application/vnd.github+json', 'user-agent': `${APP_NAME}/${app.getVersion()}` },
+      });
+      if (!res.ok) throw new Error(`GitHub ${res.status}`);
+      const data = await res.json();
+      const latest = String(data.tag_name || data.name || '').replace(/^v/i, '');
+      console.log(`[movix] mise à jour : dernière release ${latest || '?'}, installée ${app.getVersion()}`);
+      if (latest && isNewerVersion(latest, app.getVersion())) {
+        const { response } = await dialog.showMessageBox(mainWindow, {
+          type: 'info',
+          title: 'Nouvelle version',
+          message: `${APP_NAME} ${latest} est disponible (installée : ${app.getVersion()}).`,
+          detail: process.platform === 'darwin'
+            ? 'Télécharge le zip pour ton Mac, puis remplace l’app dans Applications.'
+            : 'Télécharge le paquet pour ton système, puis installe-le par-dessus la version actuelle.',
+          buttons: ['Télécharger', 'Plus tard'],
+          defaultId: 0,
+          cancelId: 1,
+        });
+        if (response === 0) shell.openExternal(RELEASES_PAGE);
+      } else if (interactive) {
+        await dialog.showMessageBox(mainWindow, {
+          type: 'info', title: 'Mises à jour', message: `${APP_NAME} ${app.getVersion()} est à jour.`, buttons: ['OK'],
+        });
+      }
+    } catch (err) {
+      console.warn('[movix] mise à jour :', err && err.message);
+      if (interactive) {
+        dialog.showMessageBox(mainWindow, {
+          type: 'warning', title: 'Mises à jour', message: 'Impossible de vérifier les mises à jour.',
+          detail: err && err.message ? err.message : String(err), buttons: ['OK'],
+        }).catch(() => {});
+      }
+    }
+  }
+
   function initAutoUpdate() {
     if (!app.isPackaged) return;
+    if (process.platform !== 'win32') {
+      checkReleasesPage(false);
+      return;
+    }
     try {
       ({ autoUpdater } = require('electron-updater'));
     } catch (err) {
@@ -598,6 +660,8 @@ function bootstrap() {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.on('error', (err) => console.warn('[movix] mise à jour :', err && err.message));
+    autoUpdater.on('update-available', (info) => console.log(`[movix] mise à jour : ${info.version} disponible, téléchargement…`));
+    autoUpdater.on('update-not-available', () => console.log(`[movix] mise à jour : ${app.getVersion()} est à jour`));
     autoUpdater.on('update-downloaded', (info) => {
       dialog.showMessageBox(mainWindow, {
         type: 'question',
@@ -615,6 +679,7 @@ function bootstrap() {
   }
 
   function checkForUpdates(interactive) {
+    if (process.platform !== 'win32' && app.isPackaged) return checkReleasesPage(interactive);
     if (!autoUpdater) {
       if (interactive) {
         dialog.showMessageBox(mainWindow, {

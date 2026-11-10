@@ -1,7 +1,7 @@
 {
   "name": "mewflix-desktop",
   "productName": "MEWFLIX",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Application de bureau Windows (Electron) : lecteur de streaming connecté aux serveurs du service, extension intégrée, blocage des pubs en phase de test.",
   "author": "MEWFLIX",
   "license": "CC-BY-NC-4.0",
@@ -84,9 +84,10 @@
     },
     "publish": [
       {
-        "provider": "generic",
-        "url": "https://raw.githubusercontent.com/movixstream/MovixOpenSource/main/desktop/release",
-        "channel": "latest"
+        "provider": "github",
+        "owner": "taharhajji",
+        "repo": "MovixOpenSource",
+        "releaseType": "release"
       }
     ],
     "linux": {
