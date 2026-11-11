@@ -41,6 +41,11 @@ const DEFAULTS = Object.freeze({
   // priorité (plus de vérification tant qu'une autre source existe),
   // 'off' = désactivée, 'keep' = ordre du site inchangé. MOVIX_SWIFTFLUX=…
   swiftfluxSource: 'last',
+  // Mode strict des lecteurs externes : dans une iframe de lecteur tiers,
+  // seuls le site du lecteur, les hébergeurs vidéo et les bibliothèques
+  // connues chargent des scripts (les régies changent de domaine sans cesse).
+  // MOVIX_STRICT_EMBEDS=0 ou --strict-embeds=off pour le couper.
+  strictEmbeds: true,
 });
 
 function readOnOffOverride(argv, env, flag, envName) {
@@ -129,6 +134,13 @@ class AppConfig {
     this.siteBrandingOverride = readSiteBrandingOverride(argv, env);
     this.secureDnsOverride = readOnOffOverride(argv, env, 'secure-dns', 'MOVIX_SECURE_DNS');
     this.localVipOverride = readOnOffOverride(argv, env, 'local-vip', 'MOVIX_LOCAL_VIP');
+    this.strictEmbedsOverride = readOnOffOverride(argv, env, 'strict-embeds', 'MOVIX_STRICT_EMBEDS');
+  }
+
+  /** Mode strict des lecteurs externes effectif (CLI/env > config.json). */
+  get strictEmbedsEnabled() {
+    if (this.strictEmbedsOverride !== null) return this.strictEmbedsOverride;
+    return this.values.strictEmbeds !== false;
   }
 
   /** Traitement de la source SwiftFlux : 'last' | 'off' | 'keep'. */

@@ -1,7 +1,7 @@
 {
   "name": "mewflix-desktop",
   "productName": "MEWFLIX",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Application de bureau Windows (Electron) : lecteur de streaming connecté aux serveurs du service, extension intégrée, blocage des pubs en phase de test.",
   "author": "MEWFLIX",
   "license": "CC-BY-NC-4.0",

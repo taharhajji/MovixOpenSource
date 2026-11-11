@@ -104,3 +104,54 @@ test('config : blocage actif par défaut, --adblock=off et MOVIX_ADBLOCK=0 le co
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('mode strict des lecteurs externes : tiers inconnus bloqués, lecteur, vidéo et bibliothèques autorisés', () => {
+  const { siteOf } = require('../src/lib/adBlock.js');
+  assert.equal(siteOf('u14.vidzy.org'), 'vidzy.org');
+  assert.equal(siteOf('a.b.example.co.uk'), 'example.co.uk');
+  assert.equal(siteOf('93.123.109.95'), '93.123.109.95');
+
+  const blocker = new AdBlocker({ cacheDir: tmpdir(), isSiteHost: (h) => h === 'movix.luxe', log: { log() {}, warn() {} } });
+  const ctx = { requesterHost: 'vidzy.org', rootHost: 'vidzy.org' };
+  const check = (url, resourceType, context = ctx) => blocker.shouldBlockEmbedRequest({ url, resourceType, ...context });
+
+  // Régies à domaines jetables : scripts, sous-cadres et appels de données bloqués.
+  assert.equal(check('https://is.sapelemoils.click/a.js', 'script'), true);
+  assert.equal(check('https://reoils.tampanslimpetjab.cfd/x', 'xhr'), true);
+  assert.equal(check('https://ehiakjopnzwcc.online/track', 'xhr'), true);
+  assert.equal(check('https://ads.example.net/frame.html', 'subFrame'), true);
+  // Le lecteur lui-même, ses sous-domaines et le site.
+  assert.equal(check('https://vidzy.org/js/player.js', 'script'), false);
+  assert.equal(check('https://u14.vidzy.org/hls/x', 'xhr'), false);
+  assert.equal(check('https://movix.luxe/api/x', 'xhr'), false);
+  // Bibliothèques connues.
+  assert.equal(check('https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js', 'script'), false);
+  assert.equal(check('https://ssl.p.jwpcdn.com/player/v/8/jwplayer.js', 'script'), false);
+  // Vidéo : playlist sur un CDN inconnu, puis segments sans extension du même site.
+  assert.equal(check('https://cdn7.randomcdn.xyz/v/abc/seg', 'xhr'), true);
+  assert.equal(check('https://cdn7.randomcdn.xyz/v/abc/master.m3u8', 'xhr'), false);
+  assert.equal(check('https://cdn7.randomcdn.xyz/v/abc/seg', 'xhr'), false);
+  assert.equal(check('https://other.cdn.io/v/seg-001.ts', 'xhr'), false);
+  // Types jamais bloqués, images et styles laissés aux listes.
+  assert.equal(check('https://ads.example.net/video.mp4', 'media'), false);
+  assert.equal(check('https://ads.example.net/banner.png', 'image'), false);
+  // Cadre publicitaire imbriqué dans le lecteur : même règle.
+  assert.equal(check('https://tracker.bad.top/t.js', 'script', { requesterHost: 'ads.example.net', rootHost: 'vidzy.org' }), true);
+  // Désactivable.
+  blocker.strictEmbeds = false;
+  assert.equal(check('https://is.sapelemoils.click/a.js', 'script'), false);
+  blocker.strictEmbeds = true;
+  blocker.enabled = false;
+  assert.equal(check('https://is.sapelemoils.click/a.js', 'script'), false);
+});
+
+test('config : mode strict des lecteurs externes actif par défaut, surchargeable', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mewflix-cfg-'));
+  try {
+    assert.equal(new AppConfig(dir).strictEmbedsEnabled, true);
+    assert.equal(new AppConfig(dir, { argv: ['--strict-embeds=off'] }).strictEmbedsEnabled, false);
+    assert.equal(new AppConfig(dir, { env: { MOVIX_STRICT_EMBEDS: '0' } }).strictEmbedsEnabled, false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

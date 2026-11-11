@@ -59,6 +59,13 @@ function buildMenu(actions) {
           click: (item) => actions.toggleAdBlock(item.checked),
         },
         {
+          label: 'Mode strict sur les lecteurs externes (anti-pub renforcé)',
+          type: 'checkbox',
+          checked: actions.strictEmbedsEnabled,
+          enabled: actions.adBlockEnabled,
+          click: (item) => actions.toggleStrictEmbeds(item.checked),
+        },
+        {
           label: 'Statut VIP local (phase de test)',
           type: 'checkbox',
           checked: actions.localVipEnabled,

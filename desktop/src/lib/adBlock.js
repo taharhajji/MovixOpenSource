@@ -123,6 +123,48 @@ function isNeverBlockedHost(hostname) {
   return NEVER_BLOCK_SUFFIXES.some((suffix) => hostMatches(hostname, suffix));
 }
 
+// --- Mode strict des lecteurs externes -----------------------------------------
+// Les lecteurs en iframe chargent leurs régies depuis des domaines jetables,
+// renouvelés en permanence et donc absents des listes de filtres. Dans un
+// lecteur externe, on inverse la logique : seuls le site du lecteur, les
+// hébergeurs vidéo et quelques bibliothèques connues peuvent charger scripts
+// et sous-cadres ; les autres appels tiers ne passent que s'ils ressemblent à
+// de la vidéo.
+const EMBED_LIBRARY_SUFFIXES = [
+  'jsdelivr.net', 'cloudflare.com', 'unpkg.com', 'jquery.com', 'googleapis.com', 'gstatic.com',
+  'bootstrapcdn.com', 'fontawesome.com', 'plyr.io', 'zencdn.net', 'jwpcdn.com', 'jwplayer.com',
+  'jwplatform.com', 'hcaptcha.com', 'recaptcha.net', 'google.com', 'tmdb.org', 'themoviedb.org',
+  'dashjs.org', 'bitmovin.com', 'fluidplayer.com', 'cloudflareinsights.com',
+];
+const TWO_LEVEL_SUFFIXES = new Set([
+  'co.uk', 'org.uk', 'com.br', 'com.au', 'co.jp', 'co.in', 'com.tr', 'com.mx', 'co.za', 'com.ar', 'co.kr', 'com.cn',
+]);
+const MEDIA_PATH = /\.(m3u8|mpd|ts|m4s|m4a|m4v|mp4|mkv|webm|aac|mp3|vtt|srt|ass|key|jpg|jpeg|png|webp|gif)$/i;
+const PLAYLIST_PATH = /\.(m3u8|mpd)$/i;
+const STRICT_BLOCKED_TYPES = new Set(['script', 'subFrame', 'object', 'ping', 'other', 'cspReport']);
+
+/** Domaine enregistrable approché (« u14.vidzy.org » → « vidzy.org »). */
+function siteOf(hostname) {
+  const host = String(hostname || '').toLowerCase().replace(/\.+$/, '');
+  if (!host || /^\d+(\.\d+){3}$/.test(host) || host.includes(':')) return host;
+  const labels = host.split('.');
+  if (labels.length <= 2) return host;
+  const lastTwo = labels.slice(-2).join('.');
+  return TWO_LEVEL_SUFFIXES.has(lastTwo) ? labels.slice(-3).join('.') : lastTwo;
+}
+
+function isEmbedLibraryHost(hostname) {
+  return EMBED_LIBRARY_SUFFIXES.some((suffix) => hostMatches(hostname, suffix));
+}
+
+function pathnameOf(url) {
+  try {
+    return new URL(String(url)).pathname;
+  } catch {
+    return '';
+  }
+}
+
 class AdBlocker {
   /**
    * @param {object} options
@@ -139,6 +181,44 @@ class AdBlocker {
     this.engineSource = 'aucun';
     this.loading = null;
     this.stats = { requests: 0, popups: 0, byHost: new Map() };
+    // Mode strict des lecteurs externes, et sites vidéo appris en cours de session.
+    this.strictEmbeds = true;
+    this.mediaSites = new Set();
+  }
+
+  /**
+   * Requête émise depuis un lecteur externe (iframe d'un site tiers) : bloquée
+   * si elle vise un tiers inconnu. Appelée après shouldBlock, pour les
+   * requêtes que les listes ont laissées passer.
+   *
+   * @param {object} details
+   * @param {string} details.url
+   * @param {string} details.resourceType   type Electron (script, subFrame, xhr…)
+   * @param {string} details.requesterHost  hôte du cadre qui émet la requête
+   * @param {string} details.rootHost       hôte du lecteur (iframe posée par le site)
+   */
+  shouldBlockEmbedRequest(details) {
+    if (!this.enabled || !this.strictEmbeds) return false;
+    const type = String(details.resourceType || '');
+    if (NEVER_BLOCK_TYPES.has(type)) return false;
+    const url = String(details.url || '');
+    const hostname = hostnameOf(url);
+    if (!hostname) return false;
+    const targetSite = siteOf(hostname);
+    const pathname = pathnameOf(url);
+    // Un site qui sert une playlist est un CDN vidéo : ses segments passeront
+    // ensuite quelle que soit leur extension.
+    if (PLAYLIST_PATH.test(pathname)) this.mediaSites.add(targetSite);
+    if (this.isSiteHost(hostname) || isNeverBlockedHost(hostname)) return false;
+    if (isProviderUrl(url) || isVideoHost(hostname) || isEmbedLibraryHost(hostname)) return false;
+    if (targetSite === siteOf(details.requesterHost) || targetSite === siteOf(details.rootHost)) return false;
+    if (this.mediaSites.has(targetSite)) return false;
+
+    let blocked = false;
+    if (STRICT_BLOCKED_TYPES.has(type)) blocked = true;
+    else if (type === 'xhr') blocked = !MEDIA_PATH.test(pathname);
+    if (blocked) this._record(hostname, 'requests');
+    return blocked;
   }
 
   get cachePath() {
@@ -244,6 +324,8 @@ class AdBlocker {
 
 module.exports = {
   AdBlocker,
+  EMBED_LIBRARY_SUFFIXES,
+  siteOf,
   BUILTIN_AD_DOMAINS,
   NEVER_BLOCK_SUFFIXES,
   VIDEO_HOST_SUFFIXES,

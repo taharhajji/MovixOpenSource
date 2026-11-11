@@ -77,6 +77,8 @@ function bootstrap() {
 
   /** @type {BrowserWindow | null} */
   let mainWindow = null;
+  // Audit des lecteurs externes (MOVIX_AUDIT_EMBED) : hôtes laissés passer.
+  let auditAllowed = null;
   /** @type {{ primaryUrl: string, mirrors: string[], githubUrl: string, telegramUrl: string, source: string }} */
   let address = null;
   /** @type {string[]} */
@@ -94,6 +96,49 @@ function bootstrap() {
     log: console,
   });
   adBlocker.enabled = config.adBlockEnabled;
+  adBlocker.strictEmbeds = config.strictEmbedsEnabled;
+
+  /**
+   * Contexte « lecteur externe » d'une requête : hôte du cadre demandeur et
+   * hôte du lecteur posé par le site (l'iframe de premier niveau). null pour
+   * une requête de la page du site elle-même ou d'un cadre du site.
+   */
+  function embedContextOf(details) {
+    try {
+      const frame = details.frame;
+      if (!frame) return null;
+      // Navigation d'un sous-cadre : le demandeur est le cadre parent.
+      const requester = details.resourceType === 'subFrame' ? frame.parent : frame;
+      if (!requester || !requester.parent) return null;
+      const hostOf = (f) => {
+        try {
+          const u = new URL(f.url);
+          return u.protocol === 'http:' || u.protocol === 'https:' ? u.hostname : '';
+        } catch {
+          return '';
+        }
+      };
+      let requesterHost = '';
+      let root = requester;
+      for (let cursor = requester; cursor && cursor.parent; cursor = cursor.parent) {
+        if (!requesterHost) requesterHost = hostOf(cursor);
+        root = cursor;
+      }
+      const rootHost = hostOf(root) || requesterHost;
+      if (!rootHost || isSiteHost(rootHost, siteExtraHosts())) return null;
+      return { requesterHost: requesterHost || rootHost, rootHost };
+    } catch {
+      return null; // cadre détruit entre-temps
+    }
+  }
+
+  function setStrictEmbeds(enabled) {
+    adBlocker.strictEmbeds = Boolean(enabled);
+    config.set('strictEmbeds', adBlocker.strictEmbeds);
+    console.log(`[adblock] mode strict des lecteurs externes ${adBlocker.strictEmbeds ? 'activé' : 'désactivé'}`);
+    refreshMenu();
+    if (mainWindow) mainWindow.webContents.reload();
+  }
 
   function setAdBlock(enabled) {
     adBlocker.enabled = Boolean(enabled);
@@ -441,6 +486,18 @@ function bootstrap() {
         callback({ cancel: true });
         return;
       }
+      if (!fromMainProcess && adBlocker.enabled && adBlocker.strictEmbeds) {
+        const context = embedContextOf(details);
+        if (context && adBlocker.shouldBlockEmbedRequest({ url: details.url, resourceType: details.resourceType, ...context })) {
+          if (IS_DEV) console.log(`[adblock] strict ${details.resourceType} ${details.url.slice(0, 120)} (lecteur ${context.rootHost})`);
+          callback({ cancel: true });
+          return;
+        }
+      }
+      if (auditAllowed && !fromMainProcess) {
+        const key = `${hostnameOf(details.url)} ${details.resourceType}`;
+        auditAllowed.set(key, (auditAllowed.get(key) || 0) + 1);
+      }
       callback({});
     });
 
@@ -534,6 +591,8 @@ function bootstrap() {
       siteForced: Boolean(config.forcedSiteUrl),
       adBlockEnabled: adBlocker.enabled,
       toggleAdBlock: setAdBlock,
+      strictEmbedsEnabled: adBlocker.strictEmbeds,
+      toggleStrictEmbeds: setStrictEmbeds,
       secureDnsEnabled: config.secureDnsEnabled,
       toggleSecureDns: setSecureDns,
       localVipEnabled: config.localVipEnabled,
@@ -819,12 +878,92 @@ function bootstrap() {
     }
     console.log(`[movix:smoke] ${JSON.stringify(result)}`);
     console.log(`[movix:smoke] ${ok ? 'OK' : 'ÉCHEC'}`);
+    if (ok && process.env.MOVIX_AUDIT_EMBED) {
+      await runEmbedAudit(wc, process.env.MOVIX_AUDIT_EMBED);
+      setTimeout(() => app.exit(0), 200);
+      return;
+    }
     if (ok && process.env.MOVIX_SMOKE_PLAY) {
       const playOk = await runPlaybackTest(wc, process.env.MOVIX_SMOKE_PLAY);
       setTimeout(() => app.exit(playOk ? 0 : 2), 200);
       return;
     }
     setTimeout(() => app.exit(ok ? 0 : 1), 200);
+  }
+
+  // Audit des lecteurs externes : MOVIX_AUDIT_EMBED=/watch/movie/<id>
+  // [MOVIX_AUDIT_SOURCE=omega|frembed|…] [MOVIX_AUDIT_OUT=<dossier>].
+  // Désactive les sources directes pour forcer un lecteur en iframe, clique
+  // dans le lecteur, puis écrit une capture d'écran et l'inventaire : cadres
+  // chargés, hôtes tiers laissés passer, requêtes et popups bloqués.
+  async function runEmbedAudit(wc, pathname) {
+    const outDir = process.env.MOVIX_AUDIT_OUT || path.join(__dirname, '..');
+    const source = process.env.MOVIX_AUDIT_SOURCE || '';
+    const origin = new URL(wc.getURL()).origin;
+    const DIRECT = ['nexus_hls', 'bravo', 'mp4', 'darkino', 'swiftflux', 'nexus_file'];
+    await wc.executeJavaScript(`(function() {
+      try {
+        var KEY = 'settings_source_priority_prefs';
+        var prefs = JSON.parse(localStorage.getItem(KEY));
+        var tv = prefs.categories.moviesTv;
+        var direct = ${JSON.stringify(DIRECT)};
+        var wanted = ${JSON.stringify(source)};
+        tv.sourceOrder.forEach(function(e) { e.enabled = direct.indexOf(e.id) < 0; });
+        if (wanted) {
+          var i = tv.sourceOrder.findIndex(function(e) { return e.id === wanted; });
+          if (i > 0) tv.sourceOrder.unshift(tv.sourceOrder.splice(i, 1)[0]);
+        }
+        tv.pinnedSource = null;
+        localStorage.setItem(KEY, JSON.stringify(prefs));
+        localStorage.removeItem('playerLastId');
+        return true;
+      } catch (e) { return String(e); }
+    })()`, true).catch(() => {});
+    auditAllowed = new Map();
+    const blockedBefore = adBlocker.stats ? { ...adBlocker.stats } : {};
+    console.log(`[movix:audit] ${origin}${pathname} (source ${source || 'auto'})`);
+    await wc.loadURL(`${origin}${pathname}`).catch(() => {});
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    await wait(22000);
+    const shoot = async (name) => {
+      try {
+        const shot = await wc.capturePage();
+        fs.writeFileSync(path.join(outDir, name), shot.toPNG());
+      } catch (err) { console.warn('[movix:audit] capture impossible :', err && err.message); }
+    };
+    await shoot(`audit-${source || 'auto'}-1.png`);
+    // Deux clics au centre du lecteur : c'est là que les régies accrochent leurs popups.
+    const [w, h] = mainWindow.getContentSize();
+    for (let i = 0; i < 2; i++) {
+      wc.sendInputEvent({ type: 'mouseDown', x: Math.round(w / 2), y: Math.round(h / 2), button: 'left', clickCount: 1 });
+      wc.sendInputEvent({ type: 'mouseUp', x: Math.round(w / 2), y: Math.round(h / 2), button: 'left', clickCount: 1 });
+      await wait(4000);
+    }
+    await shoot(`audit-${source || 'auto'}-2.png`);
+    const frames = wc.mainFrame.framesInSubtree.map((f) => String(f.url).slice(0, 110)).filter((u) => u && u !== 'about:blank');
+    const page = await wc.executeJavaScript(`({
+      videos: document.querySelectorAll('video').length,
+      iframes: Array.from(document.querySelectorAll('iframe')).map(function(f) { return String(f.src).slice(0, 110); }),
+      text: document.body.innerText.replace(/\\s+/g, ' ').slice(0, 160)
+    })`, true).catch((e) => ({ error: e && e.message }));
+    // État de la vidéo dans chaque cadre : le lecteur doit encore lire en mode strict.
+    const frameVideos = [];
+    for (const f of wc.mainFrame.framesInSubtree) {
+      if (f === wc.mainFrame) continue;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const state = await f.executeJavaScript(`Array.from(document.querySelectorAll('video')).map(function(v) {
+          return { rs: v.readyState, t: Math.round(v.currentTime), paused: v.paused, w: v.videoWidth };
+        })`, true);
+        frameVideos.push({ frame: String(f.url).slice(0, 60), videos: state });
+      } catch (err) { frameVideos.push({ frame: String(f.url).slice(0, 60), error: err && err.message }); }
+    }
+    page.frameVideos = frameVideos;
+    const allowed = Array.from(auditAllowed.entries()).sort((a, b) => b[1] - a[1]).slice(0, 60).map(([k, n]) => `${k} (${n})`);
+    auditAllowed = null;
+    const report = { pathname, source, page, frames, allowed, blockedBefore, blockedAfter: adBlocker.stats, summary: adBlocker.summary ? adBlocker.summary() : null };
+    fs.writeFileSync(path.join(outDir, `audit-${source || 'auto'}.json`), JSON.stringify(report, null, 2));
+    console.log(`[movix:audit] ${JSON.stringify({ page, frames: frames.length, allowedHosts: allowed.length })}`);
   }
 
   // Lecture vidéo réelle : MOVIX_SMOKE_PLAY=/watch/movie/<id>. Attend qu'un
