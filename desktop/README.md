@@ -211,4 +211,4 @@ Canal : https://github.com/taharhajji/MovixOpenSource/releases (`build.publish` 
 installe au redémarrage) ; pour macOS les zips + `latest-mac.yml` ; pour Linux les `.deb`
 (macOS et Linux : l'app propose seulement le téléchargement, faute de signature Apple / AppImage).
 Vérifié le 10 nov. 2026 : une 1.0.1 a détecté et téléchargé une 1.0.2 de test toute seule.
-Builds macOS et Linux : `scripts/build-mac-wsl.sh`, `scripts/zip-mac-wsl.sh`, `scripts/build-linux-wsl.sh` (WSL Ubuntu).
+Builds macOS et Linux (WSL Ubuntu) : `scripts/build-mac-wsl.sh`, puis `scripts/sign-mac-wsl.sh` (signature ad hoc via rcodesign : sans elle macOS affiche « endommagé » au lieu du message d'app non vérifiée), puis `scripts/zip-mac-wsl.sh` ; `scripts/build-linux-wsl.sh` pour les .deb.
