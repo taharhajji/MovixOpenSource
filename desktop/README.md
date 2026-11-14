@@ -226,6 +226,7 @@ Audit : `MOVIX_SMOKE=1 MOVIX_AUDIT_EMBED=/watch/movie/<id> [MOVIX_AUDIT_SOURCE=o
 ## Mode TV (1.1.0)
 
 Pour un PC branché sur une télé : plein écran, interface dédiée, téléphone en télécommande.
+(Sans PC, la même interface existe en appli pour télés Android : [`android-tv/`](../android-tv/README.md).)
 Le site normal n'est pas modifié ; tout se passe dans une couche à part, active seulement en mode TV.
 
 - **Boutons (1.1.1)** : « Mode TV » dans la barre du haut du site, après Anime / TV (posé par `preload.js`

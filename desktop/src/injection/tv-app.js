@@ -25,6 +25,14 @@
   var TMDB = 'https://api.themoviedb.org/3';
   var IMG = 'https://image.tmdb.org/t/p/';
   var STATE_KEY = 'mewflix_tv_state';
+  // Variantes : appli de bureau (téléphone en télécommande, mode à quitter) ou
+  // appli Android TV (android-tv/ : télécommande de la télé, pas d'autre mode).
+  // Page d'accueil de l'interface. Bureau : la racine du site. Android TV :
+  // une page légère du même site (homePath), pour ne pas recharger tout le site
+  // derrière l'interface à chaque retour d'une vidéo.
+  var HOME = typeof CFG.homePath === 'string' && CFG.homePath.charAt(0) === '/' ? CFG.homePath : '/';
+  var PHONE_REMOTE = CFG.phoneRemote !== false;
+  var STANDALONE = CFG.standalone === true;
   var isWatchPath = function () { return /^\/watch\//.test(location.pathname); };
 
   function el(tag, attrs, children) {
@@ -72,7 +80,7 @@
   // ======================================================================
   function playerMode() {
     function leave() {
-      location.assign('/');
+      location.assign(HOME);
     }
     // Sans vidéo jouable (écran d'erreur ou de choix du site) : les flèches
     // déplacent le curseur entre les boutons visibles.
@@ -118,7 +126,7 @@
     }, true);
     // Le site est une application à page unique : s'il quitte la lecture par
     // sa propre navigation, on revient à l'interface TV.
-    setInterval(function () { if (!isWatchPath()) location.replace('/'); }, 700);
+    setInterval(function () { if (!isWatchPath()) location.replace(HOME); }, 700);
   }
 
   if (isWatchPath()) { playerMode(); return; }
@@ -321,6 +329,8 @@
       var m = /^(https:\/\/api\.movix\.[a-z]{2,12})\//.exec(entries[i].name);
       if (m) add(m[1]);
     }
+    // Même domaine que la page : api.<miroir> (aucune requête du site à observer sur la page légère).
+    if (location.hostname.indexOf('movix.') === 0) add('https://api.' + location.hostname);
     (CFG.apiBases || API_DEFAULTS).forEach(add);
     return out.slice(0, MAX_API_BASES);
   }
@@ -377,8 +387,8 @@
 
   function current() { return stack[stack.length - 1]; }
   function saveState() {
-    var active = document.activeElement;
-    store(STATE_KEY, { stack: stack, focus: (active && active.getAttribute && active.getAttribute('data-fk')) || '' });
+    var active = cursor();
+    store(STATE_KEY, { stack: stack, focus: (active && active.getAttribute('data-fk')) || '' });
   }
   function play(url) { saveState(); location.assign(url); }
 
@@ -411,6 +421,12 @@
   // Le curseur est une classe posée par le script, pas :focus : il reste
   // visible même si la fenêtre n'est pas au premier plan sous Windows.
   var marked = null;
+  // Position du curseur : l'élément marqué, jamais document.activeElement (le
+  // navigateur déplace son focus de lui-même, notamment un WebView Android
+  // quand il reçoit le focus de la télé).
+  function cursor() {
+    return marked && marked.isConnected && scope().contains(marked) && marked.offsetParent !== null ? marked : null;
+  }
   function clearMark() {
     if (marked) marked.classList.remove('tv-on');
     marked = null;
@@ -447,22 +463,27 @@
     return setFocus(inContent[0] || nodes.filter(function (n) { return !rail.contains(n); })[0] || nodes[0]);
   }
   function focusIsLost() {
-    var active = document.activeElement;
-    if (!active || active === document.body || !scope().contains(active)) return true;
+    var active = cursor();
+    if (!active) return true;
     return !layer && rail.contains(active) && Boolean(wantsContent || pendingFocus);
   }
   function move(dir) {
     var nodes = focusables();
     if (!nodes.length) return;
-    var active = document.activeElement && nodes.indexOf(document.activeElement) >= 0 ? document.activeElement : null;
-    if (!active) { focusFirst(); return; }
+    var active = cursor();
+    if (!active || nodes.indexOf(active) < 0) { focusFirst(); return; }
     var fromRail = !layer && rail.contains(active);
     // Depuis le menu latéral, Droite revient là où était le curseur.
     if (fromRail && dir === 'right' && lastContentFocus && root.contains(lastContentFocus) && lastContentFocus.offsetParent !== null) {
       setFocus(lastContentFocus);
       return;
     }
-    var others = nodes.filter(function (n) { return n !== active; });
+    // Haut/Bas ne passent jamais du menu latéral au contenu ni l'inverse : déplié,
+    // le menu chevauche les cartes et la géométrie seule choisirait mal.
+    var vertical = dir === 'up' || dir === 'down';
+    var others = nodes.filter(function (n) {
+      return n !== active && (layer || !vertical || rail.contains(n) === fromRail);
+    });
     var index = pickNext(active.getBoundingClientRect(), others.map(function (n) { return n.getBoundingClientRect(); }), dir);
     if (index < 0) return;
     // Vers le menu latéral : toujours sur la rubrique en cours.
@@ -697,7 +718,7 @@
       var seq = renderSeq;
       function run() {
         entry.query = query;
-        queryBox.textContent = query || 'Tape un titre, ou écris-le sur ton téléphone';
+        queryBox.textContent = query || (PHONE_REMOTE ? 'Tape un titre, ou écris-le sur ton téléphone' : 'Choisis les lettres du titre');
         queryBox.classList.toggle('empty', !query);
         clearTimeout(timer);
         if (query.trim().length < 2) { grid.textContent = ''; note.textContent = ''; return; }
@@ -750,19 +771,26 @@
         if (!bridge) return;
         bridge.setAutoStart(autoBtn.getAttribute('data-on') !== '1').then(renderAuto).catch(function () { info.textContent = 'Réglage impossible sur cet ordinateur.'; });
       });
-      actions.appendChild(el('button', { class: 'tv-btn primary', 'data-f': true, 'data-fk': 'pair', text: 'Afficher le QR code de la télécommande', on: { click: showPairing } }));
-      actions.appendChild(autoBtn);
-      actions.appendChild(el('button', { class: 'tv-btn', 'data-f': true, 'data-fk': 'exit', text: 'Quitter le mode TV', on: { click: function () { if (bridge) bridge.exit(); } } }));
-      actions.appendChild(el('button', { class: 'tv-btn', 'data-f': true, 'data-fk': 'quit', text: 'Fermer ' + APP, on: { click: function () { if (bridge) bridge.quit(); } } }));
+      // Appli de bureau : téléphone en télécommande, lancement au démarrage,
+      // retour au mode normal. Appli Android TV (STANDALONE) : rien de tout ça,
+      // la télécommande de la télé suffit et il n'y a pas d'autre mode.
+      if (PHONE_REMOTE) actions.appendChild(el('button', { class: 'tv-btn primary', 'data-f': true, 'data-fk': 'pair', text: 'Afficher le QR code de la télécommande', on: { click: showPairing } }));
+      if (!STANDALONE) {
+        actions.appendChild(autoBtn);
+        actions.appendChild(el('button', { class: 'tv-btn', 'data-f': true, 'data-fk': 'exit', text: 'Quitter le mode TV', on: { click: function () { if (bridge) bridge.exit(); } } }));
+      }
+      actions.appendChild(el('button', { class: 'tv-btn' + (STANDALONE ? ' primary' : ''), 'data-f': true, 'data-fk': 'quit', text: 'Fermer ' + APP, on: { click: function () { if (bridge) bridge.quit(); } } }));
       if (bridge) {
         bridge.info().then(function (data) {
           renderAuto(Boolean(data.autoStart));
-          info.textContent = APP + ' ' + (data.version || '') + ' · télécommande : ' + (data.remoteUrl || 'indisponible');
+          info.textContent = APP + ' ' + (data.version || '') + (PHONE_REMOTE ? ' · télécommande : ' + (data.remoteUrl || 'indisponible') : '');
         }).catch(function () { info.textContent = 'Informations indisponibles.'; });
       }
       return el('div', { class: 'tv-screen' }, [el('div', { class: 'tv-page' }, [
         el('h1', { text: 'Réglages' }),
-        el('div', { class: 'tv-note', text: 'Flèches pour se déplacer, OK pour valider, Retour pour revenir. F9 bascule entre le mode TV et le mode normal.' }),
+        el('div', { class: 'tv-note', text: STANDALONE
+          ? 'Flèches de la télécommande pour se déplacer, OK pour valider, Retour pour revenir en arrière.'
+          : 'Flèches pour se déplacer, OK pour valider, Retour pour revenir. F9 bascule entre le mode TV et le mode normal.' }),
         actions, info,
       ])]);
     },
@@ -778,7 +806,7 @@
     else focusFirst();
   }
   function openLayer(node) {
-    var returnTo = layer ? layer.__returnFocus : document.activeElement;
+    var returnTo = layer ? layer.__returnFocus : cursor();
     if (layer) { layer.remove(); layer = null; }
     node.__returnFocus = returnTo;
     layer = node;
@@ -831,8 +859,8 @@
   }
   // Chaque écran retient son curseur : Retour y revient.
   function saveFocusInEntry() {
-    var active = document.activeElement;
-    current().focus = (active && active.getAttribute && active.getAttribute('data-fk')) || '';
+    var active = cursor();
+    current().focus = (active && active.getAttribute('data-fk')) || '';
   }
 
   // ---- Rendu et navigation entre écrans ----------------------------------------
@@ -873,12 +901,14 @@
       pendingFocus = '';
       return render();
     }
-    if (!rail.contains(document.activeElement)) {
+    if (!rail.contains(cursor())) {
       wantsContent = false;
       pendingFocus = '';
       return setFocus(navButtons[stack[0].name]);
     }
     if (stack[0].name !== 'home') return goTo('home');
+    // Android TV : Retour sur le menu de l'accueil ferme l'appli, comme partout sur une télé.
+    if (STANDALONE && bridge) bridge.quit();
     return undefined;
   }
   function handleKey(key) {
@@ -889,8 +919,8 @@
       return move(key);
     }
     if (key === 'ok') {
-      var active = document.activeElement;
-      if (active && active.hasAttribute && active.hasAttribute('data-f') && scope().contains(active)) active.click();
+      var active = cursor();
+      if (active && active.hasAttribute('data-f')) active.click();
       else focusFirst();
       return undefined;
     }
@@ -953,7 +983,7 @@
   root.addEventListener('mousemove', function (event) {
     wake();
     var target = event.target && event.target.closest ? event.target.closest('[data-f]') : null;
-    if (target && target !== document.activeElement && scope().contains(target)) {
+    if (target && target !== cursor() && scope().contains(target)) {
       target.focus({ preventScroll: true });
       markFocus(target);
     }
@@ -964,7 +994,11 @@
     clock.textContent = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
   }
 
+  var mounted = false;
   function mount() {
+    if (mounted || !document.body) return;
+    mounted = true;
+    document.documentElement.classList.add('mewflix-tv');
     var style = document.createElement('style');
     style.id = 'mewflix-tv-style';
     style.textContent = CSS;
@@ -978,8 +1012,8 @@
     // Bouton « off » toujours visible, en bas du menu : retour au MEWFLIX normal.
     rail.appendChild(el('button', {
       class: 'tv-nav tv-exit', 'data-f': true, 'data-fk': 'nav:exit',
-      on: { click: function () { if (bridge) bridge.exit(); } },
-    }, [icon('exit'), el('span', { text: 'Quitter le mode TV' })]));
+      on: { click: function () { if (bridge) { if (STANDALONE) bridge.quit(); else bridge.exit(); } } },
+    }, [icon('exit'), el('span', { text: STANDALONE ? 'Fermer ' + APP : 'Quitter le mode TV' })]));
     main.appendChild(clock);
     root.appendChild(rail);
     root.appendChild(main);
@@ -996,13 +1030,25 @@
     }
     render();
     // Première ouverture de la session : on présente la télécommande.
-    if (!sessionStorage.getItem('mewflix_tv_paired')) {
+    if (PHONE_REMOTE && !sessionStorage.getItem('mewflix_tv_paired')) {
       try { sessionStorage.setItem('mewflix_tv_paired', '1'); } catch (e) { /* stockage fermé */ }
       setTimeout(showPairing, 600);
     }
   }
   // Le site est masqué dès le premier instant, l'interface se monte quand <body> existe.
-  document.documentElement.classList.add('mewflix-tv');
-  if (document.body) mount();
-  else document.addEventListener('DOMContentLoaded', mount, { once: true });
+  // (Sur une page non HTML, la racine n'existe pas encore à cet instant.)
+  if (document.documentElement) document.documentElement.classList.add('mewflix-tv');
+  // Montage dès que <body> existe, sans attendre la fin du chargement : sur
+  // certaines pages le document ne la signale jamais (flux resté ouvert).
+  if (document.body) {
+    mount();
+  } else {
+    var bodyWatch = new MutationObserver(function () {
+      if (!document.body) return;
+      bodyWatch.disconnect();
+      mount();
+    });
+    bodyWatch.observe(document, { childList: true, subtree: true });
+    document.addEventListener('DOMContentLoaded', mount, { once: true });
+  }
 })();

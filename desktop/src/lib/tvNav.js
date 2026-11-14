@@ -80,10 +80,16 @@ function controlVideo(doc, key) {
     return 'Volume ' + Math.round(video.volume * 100) + ' %';
   }
   if (key === 'ok' || key === 'playpause') {
+    // Les lecteurs de chaînes démarrent souvent muets : OK rend d'abord le son.
+    if (!video.paused && video.muted) {
+      video.muted = false;
+      return '🔊 Son activé';
+    }
     if (!video.paused) {
       video.pause();
       return '⏸ Pause';
     }
+    video.muted = false;
     var started = video.play();
     if (started && started.catch) started.catch(function () {});
     return '▶ Lecture';

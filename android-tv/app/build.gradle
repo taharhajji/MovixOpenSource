@@ -1,0 +1,65 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Clé de signature hors du dépôt : ~/.mewflix/android-keystore.properties
+// (storeFile, storePassword, keyAlias, keyPassword), créée par scripts/build-wsl.sh.
+// Sans elle, le build « release » est signé avec la clé de test d'Android.
+def keystoreFile = new File(System.getProperty('user.home'), '.mewflix/android-keystore.properties')
+def keystore = new Properties()
+if (keystoreFile.exists()) {
+    keystoreFile.withInputStream { keystore.load(it) }
+}
+
+android {
+    namespace 'com.mewflix.tv'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.mewflix.tv'
+        minSdk 23
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+        // Page légère du site qui porte l'interface télé (voir scripts/build-assets.mjs).
+        buildConfigField "String", "HOME_PATH", '"/robots.txt"'
+    }
+
+    signingConfigs {
+        release {
+            if (keystoreFile.exists()) {
+                storeFile file(keystore['storeFile'])
+                storePassword keystore['storePassword']
+                keyAlias keystore['keyAlias']
+                keyPassword keystore['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig keystoreFile.exists() ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+dependencies {
+    // Injection du script avant ceux de la page (addDocumentStartJavaScript).
+    implementation 'androidx.webkit:webkit:1.11.0'
+    testImplementation 'junit:junit:4.13.2'
+}

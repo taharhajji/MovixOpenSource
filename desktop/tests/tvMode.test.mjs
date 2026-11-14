@@ -299,6 +299,18 @@ test('controlVideo : lecture, pause, avance, recul', () => {
   assert.equal(video.currentTime, 0, 'ne passe pas sous zéro');
 });
 
+test('controlVideo : une vidéo muette retrouve le son avant de pouvoir être mise en pause', () => {
+  const live = fakeVideo({ muted: true });
+  const doc = docWith(live);
+  assert.equal(controlVideo(doc, 'ok'), '🔊 Son activé');
+  assert.equal(live.muted, false);
+  assert.equal(live.paused, false, 'la lecture continue');
+  assert.equal(controlVideo(doc, 'ok'), '⏸ Pause');
+  const stopped = fakeVideo({ muted: true, paused: true });
+  assert.equal(controlVideo(docWith(stopped), 'playpause'), '▶ Lecture');
+  assert.equal(stopped.muted, false, 'relancer une vidéo muette rend aussi le son');
+});
+
 test('controlVideo : volume borné, coupure du son', () => {
   const video = fakeVideo({ volume: 0.9, muted: true });
   const doc = docWith(video);

@@ -1,0 +1,9 @@
+# Générés par scripts/build-assets.mjs
+app/src/main/assets/
+# Gradle
+.gradle/
+build/
+app/build/
+local.properties
+# Sorties de scripts/build-wsl.sh
+dist/

@@ -1,0 +1,4 @@
+// Appli Android TV MEWFLIX : voir README.md. Construite par scripts/build-wsl.sh.
+plugins {
+    id 'com.android.application' version '8.5.2' apply false
+}
