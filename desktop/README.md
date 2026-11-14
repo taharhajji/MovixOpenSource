@@ -228,6 +228,10 @@ Audit : `MOVIX_SMOKE=1 MOVIX_AUDIT_EMBED=/watch/movie/<id> [MOVIX_AUDIT_SOURCE=o
 Pour un PC branché sur une télé : plein écran, interface dédiée, téléphone en télécommande.
 Le site normal n'est pas modifié ; tout se passe dans une couche à part, active seulement en mode TV.
 
+- **Boutons (1.1.1)** : « Mode TV » dans la barre du haut du site, après Anime / TV (posé par `preload.js`
+  dans son monde isolé : la page n'a pas accès à l'IPC `tv:enter` et seul un clic `isTrusted` compte) ;
+  « Quitter le mode TV » en bas du menu latéral de l'interface télé. Test : `MOVIX_SMOKE=1
+  MOVIX_SMOKE_TV_BUTTON=1 MOVIX_TV_WINDOWED=1 npx electron .` clique les deux pour de vrai.
 - **Activer / quitter** : `F9`, menu Affichage › « Mode TV », `--tv` (ou `--tv=on|off`), `MOVIX_TV=1`.
   Le choix est mémorisé (`tvMode` dans `config.json`). Réglages › « Lancer en mode TV au démarrage du PC »
   inscrit l'app à l'ouverture de session Windows avec `--tv`.

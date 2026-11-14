@@ -901,6 +901,17 @@ function bootstrap() {
     ipcMain.on('tv:enabled', (event) => {
       event.returnValue = Boolean(tvContents(event.sender));
     });
+    // Bouton « Mode TV » de la barre du site (posé par le preload, clic réel exigé).
+    const mainContents = () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null);
+    ipcMain.on('tv:can-enter', (event) => {
+      event.returnValue = !tvMode && event.sender === mainContents();
+    });
+    ipcMain.handle('tv:enter', (event) => {
+      const wc = mainContents();
+      if (!wc || tvMode || event.sender !== wc || event.senderFrame !== wc.mainFrame) return false;
+      setTvMode(true).catch((err) => console.warn('[tv]', err && err.message));
+      return true;
+    });
     // Appels du pont TV : cadre principal de la fenêtre principale uniquement
     // (jamais l'iframe d'un lecteur ni une fenêtre secondaire).
     const fromTvPage = (event) => {
@@ -1259,7 +1270,83 @@ function bootstrap() {
       setTimeout(() => app.exit(playOk ? 0 : 2), 200);
       return;
     }
+    if (ok && process.env.MOVIX_SMOKE_TV_BUTTON) {
+      const buttonOk = await runTvButtonTest(wc);
+      setTimeout(() => app.exit(buttonOk ? 0 : 3), 200);
+      return;
+    }
     setTimeout(() => app.exit(ok ? 0 : 1), 200);
+  }
+
+  // Boutons du mode TV : MOVIX_SMOKE_TV_BUTTON=1 (avec MOVIX_TV_WINDOWED=1 pour
+  // rester en fenêtre). Vrais clics souris : « Mode TV » dans la barre du site
+  // doit activer le mode, « Quitter le mode TV » du menu latéral le couper ; un
+  // clic simulé par un script de la page ne doit rien faire.
+  async function runTvButtonTest(wc) {
+    const SMOKE_POLL_MS = 250;
+    const SMOKE_POLLS = 60;
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const centerOf = (selector) => wc.executeJavaScript(`(function () {
+      var node = document.querySelector(${JSON.stringify(selector)});
+      if (!node) return null;
+      var r = node.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 ? { x: r.left + r.width / 2, y: r.top + r.height / 2, text: String(node.textContent || '').trim() } : null;
+    })()`, true).catch(() => null);
+    const click = (point) => {
+      const zoom = wc.getZoomFactor();
+      const at = { x: Math.round(point.x * zoom), y: Math.round(point.y * zoom), button: 'left', clickCount: 1 };
+      wc.sendInputEvent({ type: 'mouseDown', ...at });
+      wc.sendInputEvent({ type: 'mouseUp', ...at });
+    };
+    const until = async (test) => {
+      for (let i = 0; i < SMOKE_POLLS; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        if (await test()) return true;
+        // eslint-disable-next-line no-await-in-loop
+        await wait(SMOKE_POLL_MS);
+      }
+      return false;
+    };
+    const shoot = async (name) => {
+      try {
+        fs.writeFileSync(path.join(__dirname, '..', name), (await wc.capturePage()).toPNG());
+      } catch (err) {
+        console.warn('[movix:smoke] capture impossible :', err && err.message);
+      }
+    };
+    const report = { button: null, scriptedClickIgnored: false, entered: false, exitButton: null, left: false };
+    const onSelector = '[data-mewflix-tv-toggle]';
+    await until(async () => Boolean(await centerOf(onSelector)));
+    const on = await centerOf(onSelector);
+    report.button = on ? on.text : null;
+    if (on) {
+      await shoot('smoke-tv-button.png');
+      await wc.executeJavaScript(`document.querySelector(${JSON.stringify(onSelector)}).click()`, true).catch(() => {});
+      await wait(1500);
+      report.scriptedClickIgnored = !tvMode;
+      click(on);
+      report.entered = await until(async () => tvMode);
+    }
+    if (report.entered) {
+      // La boîte du QR code s'ouvre au premier affichage : on la ferme d'abord.
+      const dialog = '#mewflix-tv .tv-dialog .tv-btn';
+      if (await until(async () => Boolean(await centerOf(dialog)))) {
+        click(await centerOf(dialog));
+        await wait(600);
+      }
+      const offSelector = '#mewflix-tv [data-fk="nav:exit"]';
+      const off = await centerOf(offSelector);
+      report.exitButton = off ? 'présent' : null;
+      await shoot('smoke-tv-mode.png');
+      if (off) {
+        click(off);
+        report.left = await until(async () => !tvMode);
+      }
+    }
+    const ok = Boolean(report.button && report.scriptedClickIgnored && report.entered && report.exitButton && report.left);
+    console.log(`[movix:smoke] boutons mode TV ${JSON.stringify(report)}`);
+    console.log(`[movix:smoke] boutons mode TV : ${ok ? 'OK' : 'ÉCHEC'}`);
+    return ok;
   }
 
   // Audit des lecteurs externes : MOVIX_AUDIT_EMBED=/watch/movie/<id>

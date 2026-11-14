@@ -327,6 +327,16 @@ test('interface TV : script valide, sans innerHTML ni console.log', () => {
   assert.equal(/console\.log/.test(source), false);
 });
 
+test('boutons mode TV : activation par vrai clic seulement, sortie dans le menu latéral', () => {
+  const preload = readFileSync(new URL('../src/preload.js', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../src/injection/tv-app.js', import.meta.url), 'utf8');
+  const handler = preload.slice(preload.indexOf("button.addEventListener('click'"), preload.indexOf('return button;'));
+  assert.ok(handler.indexOf('isTrusted') > 0 && handler.indexOf('isTrusted') < handler.indexOf("invoke('tv:enter')"), 'le clic simulé est écarté avant l’appel');
+  assert.equal(/exposeInMainWorld[^;]*tv:enter/.test(preload), false);
+  assert.equal(preload.includes("api.enterTv") || preload.includes("enter: ()"), false, 'l’activation n’est pas exposée à la page');
+  assert.ok(app.includes("'data-fk': 'nav:exit'") && app.includes('Quitter le mode TV'));
+});
+
 test('config : mode TV par défaut coupé, --tv et MOVIX_TV l’imposent', () => {
   const dir = mkdtempSync(join(tmpdir(), 'mewflix-cfg-'));
   try {

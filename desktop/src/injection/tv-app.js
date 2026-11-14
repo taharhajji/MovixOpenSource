@@ -143,6 +143,7 @@
     '.tv-logo img { width: 5.6vh; height: 5.6vh; border-radius: 1.3vh; flex: none; }',
     '.tv-nav { display: flex; align-items: center; gap: 2.2vh; height: 7.4vh; padding: 0 2.3vh; border-radius: 1.8vh; white-space: nowrap; color: #9fb3d1; font-weight: 600; font-size: 2.3vh; }',
     '.tv-nav svg { width: 3.4vh; height: 3.4vh; flex: none; }',
+    '.tv-exit { margin-top: auto; }',
     '.tv-nav.current { color: #e7edf7; background: rgba(219,230,246,.09); }',
     '.tv-nav.tv-on { color: #141518; background: ' + ACCENT + '; }',
     '.tv-main { position: absolute; left: 11vh; right: 0; top: 0; bottom: 0; }',
@@ -212,6 +213,7 @@
     series: 'M3 6h18v11H3zM8 21h8M12 17v4',
     live: 'M4 8h16v11H4zM8 3l4 5 4-5M9 13.5l4 2.5V11z',
     search: 'M11 4a7 7 0 1 1 0 14 7 7 0 0 1 0-14zm5 12 4.5 4.5',
+    exit: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
     settings: 'M12 9a3 3 0 1 1 0 6 3 3 0 0 1 0-6zM4 12h2M18 12h2M12 4v2M12 18v2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M6.3 17.7l1.4-1.4M16.3 7.7l1.4-1.4',
   };
   function icon(name) {
@@ -972,6 +974,11 @@
       navButtons[pair[0]] = button;
       rail.appendChild(button);
     });
+    // Bouton « off » toujours visible, en bas du menu : retour au MEWFLIX normal.
+    rail.appendChild(el('button', {
+      class: 'tv-nav tv-exit', 'data-f': true, 'data-fk': 'nav:exit',
+      on: { click: function () { if (bridge) bridge.exit(); } },
+    }, [icon('exit'), el('span', { text: 'Quitter le mode TV' })]));
     main.appendChild(clock);
     root.appendChild(rail);
     root.appendChild(main);
