@@ -11,7 +11,12 @@ mkdir -p "$WORK/desktop" "$WORK/userscript"
 rsync -a --delete --exclude node_modules --exclude dist --exclude dist-mac --exclude '*.log' "$SRC/desktop/" "$WORK/desktop/"
 cp "$SRC/userscript/movix.user.js" "$WORK/userscript/movix.user.js"
 cd "$WORK/desktop"
-[ -d node_modules ] || npm ci --no-audit --no-fund
+# Dépendances : réinstallées seulement quand package-lock.json a changé.
+LOCK_SUM="$(sha256sum package-lock.json | cut -d' ' -f1)"
+if [ ! -d node_modules ] || [ "$(cat node_modules/.lock-sum 2>/dev/null || true)" != "$LOCK_SUM" ]; then
+  npm install --no-audit --no-fund
+  echo "$LOCK_SUM" > node_modules/.lock-sum
+fi
 npm run sync:userscript
 export CSC_IDENTITY_AUTO_DISCOVERY=false
 npx electron-builder --linux deb --x64 --arm64 --publish never -c.compression=normal

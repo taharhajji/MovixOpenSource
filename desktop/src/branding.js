@@ -25,4 +25,8 @@ module.exports = Object.freeze({
   SLATE: '#4a5570',
   BACKGROUND: '#141518',
   LICENSE_LINE: 'Licence CC BY-NC 4.0',
+  // Clé TMDB du site public (présente telle quelle dans son bundle, voir
+  // web/scripts/build.mjs) : catalogue de l'interface du mode TV.
+  // Surchargeable par MOVIX_TMDB_KEY.
+  TMDB_PUBLIC_KEY: 'f3d757824f08ea2cff45eb8f47ca3a1e',
 });

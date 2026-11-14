@@ -46,6 +46,16 @@ const DEFAULTS = Object.freeze({
   // connues chargent des scripts (les régies changent de domaine sans cesse).
   // MOVIX_STRICT_EMBEDS=0 ou --strict-embeds=off pour le couper.
   strictEmbeds: true,
+  // Mode TV : plein écran, interface pensée pour la télé, téléphone en
+  // télécommande (QR code). `--tv` / `--tv=on|off` / MOVIX_TV pour l'imposer.
+  tvMode: false,
+  // Port du serveur de télécommande sur le réseau local (un port libre est
+  // pris s'il est occupé) et jeton d'accès, généré au premier lancement puis
+  // conservé pour que la page enregistrée sur le téléphone reste valable.
+  tvRemotePort: 8765,
+  tvRemoteToken: '',
+  // Lancer l'app en mode TV à l'ouverture de session Windows.
+  tvAutoStart: false,
 });
 
 function readOnOffOverride(argv, env, flag, envName) {
@@ -135,6 +145,20 @@ class AppConfig {
     this.secureDnsOverride = readOnOffOverride(argv, env, 'secure-dns', 'MOVIX_SECURE_DNS');
     this.localVipOverride = readOnOffOverride(argv, env, 'local-vip', 'MOVIX_LOCAL_VIP');
     this.strictEmbedsOverride = readOnOffOverride(argv, env, 'strict-embeds', 'MOVIX_STRICT_EMBEDS');
+    // `--tv` seul vaut `--tv=on` (raccourci, lancement au démarrage du PC).
+    this.tvModeOverride = argv.includes('--tv') ? true : readOnOffOverride(argv, env, 'tv', 'MOVIX_TV');
+  }
+
+  /** Mode TV au lancement (CLI/env > config.json). */
+  get tvModeEnabled() {
+    if (this.tvModeOverride !== null) return this.tvModeOverride;
+    return this.values.tvMode === true;
+  }
+
+  /** Port voulu pour la télécommande (1024-65535, sinon la valeur par défaut). */
+  get tvRemotePort() {
+    const port = Number(this.values.tvRemotePort);
+    return Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : DEFAULTS.tvRemotePort;
   }
 
   /** Mode strict des lecteurs externes effectif (CLI/env > config.json). */

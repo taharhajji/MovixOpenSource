@@ -50,6 +50,16 @@ if (onSite || onLocalPage) {
 if (onSite) {
   api.gmFetch = (message) => ipcRenderer.invoke('gm:fetch', message);
   api.gmAbort = (id) => ipcRenderer.invoke('gm:abort', String(id));
+  // Mode TV : l'interface injectée (src/injection/tv-app.js) lit l'adresse de
+  // la télécommande et pilote la sortie du mode. Exposé seulement s'il est actif.
+  if (ipcRenderer.sendSync('tv:enabled') === true) {
+    api.tv = {
+      info: () => ipcRenderer.invoke('tv:info'),
+      setAutoStart: (enabled) => ipcRenderer.invoke('tv:set-autostart', enabled === true),
+      exit: () => ipcRenderer.invoke('tv:exit'),
+      quit: () => ipcRenderer.invoke('tv:quit'),
+    };
+  }
 }
 
 if (onLocalPage) {

@@ -222,3 +222,34 @@ ressemble à de la vidéo ; scripts, sous-cadres et appels de données vers un t
 Réglage : menu « Mode strict sur les lecteurs externes », `--strict-embeds=off`, `MOVIX_STRICT_EMBEDS=0`.
 Audit : `MOVIX_SMOKE=1 MOVIX_AUDIT_EMBED=/watch/movie/<id> [MOVIX_AUDIT_SOURCE=omega] [MOVIX_AUDIT_OUT=<dossier>] npx electron .`
 écrit des captures et un rapport JSON (cadres chargés, hôtes laissés passer, requêtes bloquées, état de la vidéo).
+
+## Mode TV (1.1.0)
+
+Pour un PC branché sur une télé : plein écran, interface dédiée, téléphone en télécommande.
+Le site normal n'est pas modifié ; tout se passe dans une couche à part, active seulement en mode TV.
+
+- **Activer / quitter** : `F9`, menu Affichage › « Mode TV », `--tv` (ou `--tv=on|off`), `MOVIX_TV=1`.
+  Le choix est mémorisé (`tvMode` dans `config.json`). Réglages › « Lancer en mode TV au démarrage du PC »
+  inscrit l'app à l'ouverture de session Windows avec `--tv`.
+- **Interface** (`src/injection/tv-app.js`) : injectée dans la page du site, elle la recouvre entièrement
+  (accueil en rangées, Films, Séries, fiche avec saisons/épisodes, recherche avec clavier à l'écran,
+  TV en direct, réglages). Catalogue : TMDB ; « Reprendre la lecture » : `localStorage.continueWatching`
+  du site ; chaînes : `/api/livetv` du site. La lecture ouvre la vraie page `/watch/…` du site, où seules
+  les touches sont gérées (lecture/pause, ±10 s, ±30 s, volume, Retour).
+- **Curseur** : navigation spatiale `pickNext` (`src/lib/tvNav.js`), flèches / Entrée / Échap au clavier.
+  C'est une classe (`tv-on`) posée par le script, pas `:focus` : il reste visible fenêtre inactive.
+- **Télécommande** (`src/lib/tvRemote.js`, page `src/pages/remote.html`) : serveur HTTP sur le réseau local,
+  port `tvRemotePort` (8765, ou un port libre). Le QR code affiché à l'écran contient l'adresse et un jeton
+  (`tvRemoteToken`, 16 caractères hexadécimaux ; le supprimer de `config.json` en génère un nouveau) ;
+  sans lui tout est refusé (403), 20 mauvais jetons bloquent l'adresse une minute.
+  Seules des commandes d'une liste close passent (`parseCommand`). Le serveur ne tourne qu'en mode TV.
+  Sont aussi refusées : les requêtes venant du PC lui-même (le site chargé dans la fenêtre connaît
+  l'adresse et le jeton, il ne doit pas pouvoir se faire passer pour le téléphone), celles portant
+  l'origine d'un autre site, un nom de domaine à la place de l'IP (réassociation DNS) et tout envoi
+  qui n'est pas du JSON. Le trafic est en HTTP clair sur le réseau local : à réserver au Wi-Fi de la maison.
+  Au premier lancement Windows demande d'autoriser l'app sur le réseau : il faut accepter, et le
+  téléphone doit être sur le même Wi-Fi.
+- **Lecteurs externes** : la vidéo d'une iframe tierce est pilotée par `controlVideo` exécuté dans le cadre ;
+  sans vidéo chargée, OK envoie un vrai clic au centre de l'écran (démarrage du lecteur).
+- **Développement** : `MOVIX_TV=1 MOVIX_TV_WINDOWED=1 npx electron .` garde une fenêtre normale ; hors build
+  packagé le serveur expose aussi `/shot` (capture PNG) et `/debug` (état de l'interface), derrière le jeton.

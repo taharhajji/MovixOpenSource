@@ -34,6 +34,8 @@ const { classifyExternalUrl, isAllowedInApp, isHttpUrl, isSiteHost } = require('
 const { buildInjectedJavaScript } = require('./injection/bridge-runtime');
 const { buildMenu } = require('./lib/menu');
 const { AdBlocker } = require('./lib/adBlock');
+const tvRemote = require('./lib/tvRemote');
+const { pickNext, controlVideo } = require('./lib/tvNav');
 const BRAND = require('./branding');
 
 const APP_ID = BRAND.APP_ID;
@@ -86,6 +88,11 @@ function bootstrap() {
   let chainIndex = 0;
   let currentMirrorUrl = '';
   let injectionCode = '';
+  // Mode TV : interface injectée en plus (fenêtre principale seulement) et
+  // serveur de télécommande { server, port, token, qrFor, qr }.
+  let tvMode = config.tvModeEnabled;
+  let tvInjectionCode = '';
+  let remote = null;
   let lastFailure = '';
 
   // Blocage des pubs (phase de test) : liste intégrée active tout de suite,
@@ -199,6 +206,7 @@ function bootstrap() {
         themeCss,
         brandIconUrl,
       });
+      tvInjectionCode = tvMode ? buildTvInjection(brandIconUrl) : '';
       console.log(`[movix] thème ${themeCss ? `appliqué (${(themeCss.length / 1024).toFixed(0)} Ko)` : 'du site'}`);
       console.log(`[movix] source SwiftFlux (vérification robot) : ${config.swiftfluxSource}`);
       console.log(`[movix] marque du site ${config.hideSiteBranding ? 'masquée' : 'visible'} dans la page`);
@@ -206,7 +214,37 @@ function bootstrap() {
       console.log(`[movix] userscript chargé (${(userscriptSource.length / 1024).toFixed(0)} Ko)`);
     } catch (err) {
       injectionCode = '';
+      tvInjectionCode = '';
       console.error('[movix] userscript introuvable : lancez `npm run sync:userscript`', err.message);
+    }
+  }
+
+  /**
+   * Interface du mode TV (src/injection/tv-app.js) précédée de sa
+   * configuration. Isolée dans un try : une erreur ici ne prive pas la page
+   * du pont GM ni du userscript, injectés à la suite.
+   */
+  function buildTvInjection(brandIconUrl) {
+    try {
+      const source = fs.readFileSync(path.join(__dirname, 'injection', 'tv-app.js'), 'utf8');
+      const tvConfig = {
+        appName: APP_NAME,
+        accent: BRAND.ACCENT,
+        tmdbKey: process.env.MOVIX_TMDB_KEY || BRAND.TMDB_PUBLIC_KEY,
+        icon: brandIconUrl,
+      };
+      return [
+        'try {',
+        `window.__MEWFLIX_TV_CONFIG__ = ${JSON.stringify(tvConfig)};`,
+        `window.__mewflixPickNext = ${pickNext.toString()};`,
+        `window.__mewflixControlVideo = ${controlVideo.toString()};`,
+        source,
+        '} catch (e) { console.error("[tv] interface indisponible", e); }',
+        '',
+      ].join('\n');
+    } catch (err) {
+      console.error('[tv] interface du mode TV introuvable :', err.message);
+      return '';
     }
   }
 
@@ -349,22 +387,31 @@ function bootstrap() {
     if (bounds && bounds.maximized) mainWindow.maximize();
 
     mainWindow.once('ready-to-show', () => mainWindow.show());
-    const zoom = Number(config.get('zoomFactor'));
-    if (zoom > 0.3 && zoom < 4) mainWindow.webContents.setZoomFactor(zoom);
+    applyTvWindowState();
 
     const persistBounds = () => {
       if (!mainWindow || mainWindow.isDestroyed()) return;
       const maximized = mainWindow.isMaximized();
-      const current = maximized ? mainWindow.getNormalBounds() : mainWindow.getBounds();
+      // En plein écran (mode TV), on garde la taille de la fenêtre normale.
+      const current = maximized || mainWindow.isFullScreen() ? mainWindow.getNormalBounds() : mainWindow.getBounds();
       config.set('windowBounds', { ...current, maximized });
     };
     mainWindow.on('close', persistBounds);
     mainWindow.on('closed', () => {
       mainWindow = null;
     });
+    // Mode TV : quitter le plein écran d'une vidéo ne doit pas rendre la fenêtre.
+    mainWindow.on('leave-full-screen', () => {
+      if (!tvMode || TV_WINDOWED) return;
+      setTimeout(() => {
+        if (tvMode && mainWindow && !mainWindow.isDestroyed() && !mainWindow.isFullScreen()) mainWindow.setFullScreen(true);
+      }, TV_FULLSCREEN_RESTORE_MS);
+    });
 
     const wc = mainWindow.webContents;
-    wc.on('zoom-changed', () => config.set('zoomFactor', wc.getZoomFactor()));
+    wc.on('zoom-changed', () => {
+      if (!tvMode) config.set('zoomFactor', wc.getZoomFactor());
+    });
 
     // La fenêtre garde le nom de l'app : jamais le <title> du site.
     mainWindow.on('page-title-updated', (event) => {
@@ -546,11 +593,331 @@ function bootstrap() {
     });
   }
 
+  // --- Mode TV ----------------------------------------------------------------
+  //
+  // Plein écran, interface dédiée injectée dans la page du site (tv-app.js) et
+  // téléphone en télécommande : un petit serveur HTTP sur le réseau local
+  // (lib/tvRemote.js) reçoit les appuis et les rejoue dans la fenêtre.
+
+  const REMOTE_PAGE_PATH = path.join(PAGES_DIR, 'remote.html');
+  const NATIVE_KEYS = Object.freeze({ up: 'Up', down: 'Down', left: 'Left', right: 'Right', ok: 'Enter', back: 'Escape' });
+  const FRAME_SCRIPT_TIMEOUT_MS = 800;
+  const TV_FULLSCREEN_RESTORE_MS = 200;
+  // Développement : MOVIX_TV_WINDOWED=1 garde une fenêtre normale en mode TV.
+  const TV_WINDOWED = !app.isPackaged && process.env.MOVIX_TV_WINDOWED === '1';
+
+  function tvContents(sender) {
+    if (!tvMode || !mainWindow || mainWindow.isDestroyed()) return null;
+    const wc = mainWindow.webContents;
+    return !sender || sender === wc ? wc : null;
+  }
+
+  /** Évalue une expression dans la page et ramène toujours une chaîne. */
+  function runInTvPage(expression) {
+    const wc = tvContents();
+    if (!wc) return Promise.resolve('no-tv');
+    const code = `(function(){try{var r=(${expression});return typeof r==='string'?r:'done';}catch(e){return 'error';}})()`;
+    return wc.executeJavaScript(code, true).then((r) => (typeof r === 'string' ? r : 'done')).catch(() => 'no-tv');
+  }
+
+  /** Lecteur externe : la vidéo vit dans l'iframe d'un autre site. */
+  async function controlFrameVideo(wc, key) {
+    const code = `(${controlVideo.toString()})(document, ${JSON.stringify(key)})`;
+    let frames = [];
+    try {
+      frames = wc.mainFrame.framesInSubtree.filter((frame) => frame !== wc.mainFrame);
+    } catch {
+      return '';
+    }
+    for (const frame of frames) {
+      try {
+        const label = await Promise.race([
+          frame.executeJavaScript(code, true),
+          new Promise((resolve) => setTimeout(() => resolve(''), FRAME_SCRIPT_TIMEOUT_MS)),
+        ]);
+        if (typeof label === 'string' && label) return label;
+      } catch {
+        // cadre détruit ou pas encore chargé : on passe au suivant
+      }
+    }
+    return '';
+  }
+
+  function sendNativeKey(wc, key) {
+    const keyCode = NATIVE_KEYS[key];
+    if (!keyCode) return;
+    wc.sendInputEvent({ type: 'keyDown', keyCode });
+    wc.sendInputEvent({ type: 'keyUp', keyCode });
+  }
+
+  /** Vrai clic au centre : lance un lecteur qui attend un appui pour démarrer. */
+  function clickCenter(wc) {
+    const [width, height] = mainWindow.getContentSize();
+    const point = { x: Math.round(width / 2), y: Math.round(height / 2), button: 'left', clickCount: 1 };
+    wc.sendInputEvent({ type: 'mouseDown', ...point });
+    wc.sendInputEvent({ type: 'mouseUp', ...point });
+  }
+
+  // Une touche à la fois : un appui maintenu (répétition toutes les 140 ms) ne
+  // s'empile pas pendant qu'un lecteur externe met du temps à répondre.
+  let remoteKeyBusy = false;
+  async function handleRemoteKey(key) {
+    if (remoteKeyBusy) return;
+    remoteKeyBusy = true;
+    try {
+      await dispatchRemoteKey(key);
+    } finally {
+      remoteKeyBusy = false;
+    }
+  }
+
+  async function dispatchRemoteKey(key) {
+    const wc = tvContents();
+    if (!wc) return;
+    const arg = JSON.stringify(key);
+    const result = await runInTvPage(`window.__mewflixTvKey ? window.__mewflixTvKey(${arg}) : 'no-tv'`);
+    if (result === 'no-tv') {
+      // Page locale (chargement, erreur) : touche clavier native.
+      sendNativeKey(wc, key);
+      return;
+    }
+    if (result !== 'no-video') return;
+    const label = await controlFrameVideo(wc, key);
+    if (label) {
+      await runInTvPage(`window.__mewflixTvHud ? window.__mewflixTvHud(${JSON.stringify(label)}) : 'done'`);
+      return;
+    }
+    const fallback = await runInTvPage(`window.__mewflixTvFallback ? window.__mewflixTvFallback(${arg}) : 'none'`);
+    if (fallback === 'none' && (key === 'ok' || key === 'playpause')) clickCenter(wc);
+  }
+
+  /** Commande validée par lib/tvRemote.js (liste close de touches et d'écrans). */
+  function handleRemoteCommand(command) {
+    const wc = tvContents();
+    if (!wc) return;
+    // La télécommande ramène l'app au premier plan si une autre fenêtre l'a recouverte.
+    if (!TV_WINDOWED && !mainWindow.isFocused()) mainWindow.focus();
+    let work = Promise.resolve();
+    if (command.type === 'key') {
+      work = handleRemoteKey(command.key);
+    } else if (command.type === 'nav') {
+      work = runInTvPage(`window.__mewflixTvNav ? window.__mewflixTvNav(${JSON.stringify(command.screen)}) : 'no-tv'`)
+        .then((result) => {
+          if (result === 'no-tv' && currentMirrorUrl) loadMirror(chainIndex);
+        });
+    } else if (command.type === 'text') {
+      work = runInTvPage(
+        `window.__mewflixTvText ? window.__mewflixTvText(${JSON.stringify(command.text)}, ${command.submit === true}) : 'no-tv'`,
+      );
+    }
+    work.catch((err) => console.warn('[tv] commande ignorée :', err && err.message));
+  }
+
+  /** Routes de diagnostic du serveur de télécommande (jamais dans un build packagé). */
+  function devRemoteRoute(req, res, url) {
+    if (req.method !== 'GET' || (url.pathname !== '/shot' && url.pathname !== '/debug')) return false;
+    const wc = tvContents();
+    const fail = (status) => {
+      res.writeHead(status, { 'content-type': 'text/plain' });
+      res.end('indisponible');
+    };
+    if (!wc) {
+      fail(503);
+      return true;
+    }
+    if (url.pathname === '/shot') {
+      wc.capturePage().then((image) => {
+        res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' });
+        res.end(image.toPNG());
+      }).catch(() => fail(500));
+      return true;
+    }
+    const probe = `JSON.stringify({ path: location.pathname, tv: Boolean(window.__MEWFLIX_TV_ACTIVE__),
+      focus: document.activeElement ? (document.activeElement.getAttribute('data-fk') || document.activeElement.tagName) : '',
+      focusText: document.activeElement ? String(document.activeElement.textContent || '').slice(0, 60) : '',
+      cards: document.querySelectorAll('#mewflix-tv [data-f]').length,
+      rows: Array.prototype.map.call(document.querySelectorAll('#mewflix-tv .tv-row:not([hidden]) h2'), function (h) { return h.textContent; }),
+      heading: (document.querySelector('#mewflix-tv h1') || {}).textContent || '',
+      layer: (document.querySelector('#mewflix-tv .tv-layer, #mewflix-tv .tv-live') || {}).className || '',
+      videos: Array.prototype.map.call(document.querySelectorAll('video'), function (v) { return { ready: v.readyState, paused: v.paused, t: Math.round(v.currentTime), vol: v.volume, w: v.videoWidth }; }),
+      frames: document.querySelectorAll('iframe').length })`;
+    runInTvPage(probe).then((json) => {
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      res.end(json);
+    }).catch(() => fail(500));
+    return true;
+  }
+
+  // Un seul démarrage à la fois : deux bascules rapprochées ne créent pas deux
+  // serveurs dont l'un resterait à l'écoute sans propriétaire.
+  let remoteStarting = null;
+  function startRemote() {
+    if (remote) return Promise.resolve(remote);
+    if (!remoteStarting) {
+      remoteStarting = openRemote().finally(() => {
+        remoteStarting = null;
+      });
+    }
+    return remoteStarting;
+  }
+
+  async function openRemote() {
+    let token = String(config.get('tvRemoteToken') || '');
+    // Moins de 16 caractères : jeton d'une version de développement, régénéré.
+    if (!/^[0-9a-f]{16,64}$/.test(token)) {
+      token = tvRemote.newToken();
+      config.set('tvRemoteToken', token);
+    }
+    const server = tvRemote.createRemoteServer({
+      token,
+      pagePath: REMOTE_PAGE_PATH,
+      onCommand: handleRemoteCommand,
+      getState: () => ({ app: APP_NAME, version: app.getVersion() }),
+      extraRoute: app.isPackaged ? null : devRemoteRoute,
+      // Build packagé : seules les machines du réseau commandent, jamais ce PC
+      // (le site chargé dans la fenêtre connaît l'adresse et le jeton).
+      allowLocal: !app.isPackaged,
+    });
+    try {
+      const port = await tvRemote.listen(server, config.tvRemotePort);
+      // Mode TV quitté pendant l'ouverture du port : on referme aussitôt.
+      if (!tvMode) {
+        server.close();
+        return null;
+      }
+      remote = { server, port, token, qrFor: '', qr: '' };
+      console.log(`[tv] télécommande à l'écoute sur le port ${port}`);
+      if (!app.isPackaged) console.log(`[tv] adresse (dev) : ${remoteUrl()}`);
+    } catch (err) {
+      remote = null;
+      console.error('[tv] télécommande indisponible :', err && err.message);
+    }
+    return remote;
+  }
+
+  function stopRemote() {
+    if (!remote) return;
+    const { server } = remote;
+    remote = null;
+    try {
+      server.close();
+      if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+    } catch {
+      // serveur déjà arrêté
+    }
+  }
+
+  /** Adresse à ouvrir sur le téléphone ; recalculée (l'IP du PC peut changer). */
+  function remoteUrl() {
+    return remote ? `http://${tvRemote.lanAddress()}:${remote.port}/?t=${remote.token}` : '';
+  }
+
+  async function remoteInfo() {
+    // Démarrage raté (port, autorisation) : nouvel essai à chaque affichage du QR code.
+    if (tvMode && !remote) await startRemote();
+    const url = remoteUrl();
+    if (!url) return { url: '', qr: '' };
+    if (remote.qrFor !== url) {
+      let qr = '';
+      try {
+        qr = await require('qrcode').toDataURL(url, { margin: 2, width: 560, errorCorrectionLevel: 'M' });
+      } catch (err) {
+        console.warn('[tv] QR code indisponible :', err && err.message);
+      }
+      if (remote) remote = { ...remote, qrFor: url, qr };
+      return { url, qr };
+    }
+    return { url, qr: remote.qr };
+  }
+
+  // Lancement à l'ouverture de session Windows, directement en mode TV. Build
+  // portable : l'exe à relancer est celui de l'utilisateur, pas la copie
+  // temporaire qu'il extrait.
+  function loginItemOptions() {
+    return { path: process.env.PORTABLE_EXECUTABLE_FILE || process.execPath, args: ['--tv'] };
+  }
+
+  function tvAutoStartEnabled() {
+    if (!app.isPackaged) return config.get('tvAutoStart') === true;
+    try {
+      return app.getLoginItemSettings(loginItemOptions()).openAtLogin === true;
+    } catch {
+      return false;
+    }
+  }
+
+  function setTvAutoStart(enabled) {
+    config.set('tvAutoStart', enabled === true);
+    if (app.isPackaged) {
+      try {
+        app.setLoginItemSettings({ openAtLogin: enabled === true, ...loginItemOptions() });
+      } catch (err) {
+        console.warn('[tv] lancement au démarrage non réglable :', err && err.message);
+      }
+    }
+    return tvAutoStartEnabled();
+  }
+
+  /** Plein écran sans barre de menus en mode TV, fenêtre habituelle sinon. */
+  function applyTvWindowState() {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.setAutoHideMenuBar(!tvMode);
+    mainWindow.setMenuBarVisibility(false);
+    const savedZoom = Number(config.get('zoomFactor'));
+    const zoom = !tvMode && savedZoom > 0.3 && savedZoom < 4 ? savedZoom : 1;
+    mainWindow.webContents.setZoomFactor(zoom);
+    if (TV_WINDOWED) return;
+    if (mainWindow.isFullScreen() !== tvMode) mainWindow.setFullScreen(tvMode);
+  }
+
+  // Bascules traitées l'une après l'autre (F9 répété, menu, télécommande).
+  let tvModeQueue = Promise.resolve();
+  function setTvMode(enabled) {
+    const next = () => applyTvMode(enabled);
+    tvModeQueue = tvModeQueue.then(next, next);
+    return tvModeQueue;
+  }
+
+  async function applyTvMode(enabled) {
+    tvMode = Boolean(enabled);
+    config.set('tvMode', tvMode);
+    if (tvMode) await startRemote();
+    else stopRemote();
+    loadInjectionCode();
+    applyTvWindowState();
+    refreshMenu();
+    console.log(`[tv] mode TV ${tvMode ? 'activé' : 'désactivé'}`);
+    if (mainWindow && !mainWindow.isDestroyed() && currentMirrorUrl) loadMirror(chainIndex);
+  }
+
   // --- IPC ------------------------------------------------------------------
 
   function registerIpc() {
     ipcMain.on('movix:injection-code', (event) => {
-      event.returnValue = injectionCode;
+      // L'interface TV ne va que dans la fenêtre principale, jamais dans une
+      // fenêtre secondaire ouverte par le site.
+      event.returnValue = tvContents(event.sender) ? tvInjectionCode + injectionCode : injectionCode;
+    });
+    ipcMain.on('tv:enabled', (event) => {
+      event.returnValue = Boolean(tvContents(event.sender));
+    });
+    // Appels du pont TV : cadre principal de la fenêtre principale uniquement
+    // (jamais l'iframe d'un lecteur ni une fenêtre secondaire).
+    const fromTvPage = (event) => {
+      const wc = tvContents(event.sender);
+      return Boolean(wc && event.senderFrame === wc.mainFrame);
+    };
+    ipcMain.handle('tv:info', async (event) => {
+      if (!fromTvPage(event)) return {};
+      const info = await remoteInfo();
+      return { version: app.getVersion(), remoteUrl: info.url, qr: info.qr, autoStart: tvAutoStartEnabled() };
+    });
+    ipcMain.handle('tv:set-autostart', (event, enabled) => (fromTvPage(event) ? setTvAutoStart(enabled === true) : false));
+    ipcMain.handle('tv:exit', (event) => {
+      if (fromTvPage(event)) setTvMode(false).catch((err) => console.warn('[tv]', err && err.message));
+    });
+    ipcMain.handle('tv:quit', (event) => {
+      if (fromTvPage(event)) app.quit();
     });
     ipcMain.handle('gm:fetch', (event, message) => gmFetch(message || {}, event.sender.session));
     ipcMain.handle('gm:abort', (_event, id) => abortGmRequest(id));
@@ -593,6 +960,10 @@ function bootstrap() {
       toggleAdBlock: setAdBlock,
       strictEmbedsEnabled: adBlocker.strictEmbeds,
       toggleStrictEmbeds: setStrictEmbeds,
+      tvModeEnabled: tvMode,
+      toggleTvMode: (enabled) => {
+        setTvMode(enabled).catch((err) => console.warn('[tv]', err && err.message));
+      },
       secureDnsEnabled: config.secureDnsEnabled,
       toggleSecureDns: setSecureDns,
       localVipEnabled: config.localVipEnabled,
@@ -1012,10 +1383,14 @@ function bootstrap() {
 
   // --- Cycle de vie -----------------------------------------------------------
 
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv) => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
+    }
+    // Relancée avec --tv alors qu'elle tourne déjà : on passe en mode TV.
+    if (Array.isArray(argv) && argv.includes('--tv') && !tvMode) {
+      setTvMode(true).catch((err) => console.warn('[tv]', err && err.message));
     }
   });
 
@@ -1059,6 +1434,7 @@ function bootstrap() {
     loadInjectionCode();
     installWebRequestHooks(session.defaultSession);
     registerIpc();
+    if (tvMode) await startRemote();
 
     createMainWindow();
     loadLocalPage('loading.html');

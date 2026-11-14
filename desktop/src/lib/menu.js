@@ -86,6 +86,13 @@ function buildMenu(actions) {
     {
       label: 'Affichage',
       submenu: [
+        {
+          label: 'Mode TV (plein écran, téléphone en télécommande)',
+          type: 'checkbox',
+          checked: actions.tvModeEnabled === true,
+          accelerator: 'F9',
+          click: (item) => actions.toggleTvMode(item.checked),
+        },
         { label: 'Plein écran', role: 'togglefullscreen', accelerator: 'F11' },
         { type: 'separator' },
         { label: 'Zoom avant', role: 'zoomIn', accelerator: 'CmdOrCtrl+=' },

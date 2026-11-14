@@ -18,7 +18,12 @@ mkdir -p "$WORK/desktop" "$WORK/userscript"
 rsync -a --delete --exclude node_modules --exclude dist --exclude dist-mac --exclude '*.log' "$SRC/desktop/" "$WORK/desktop/"
 cp "$SRC/userscript/movix.user.js" "$WORK/userscript/movix.user.js"
 cd "$WORK/desktop"
-[ -d node_modules ] || npm ci --no-audit --no-fund
+# Dépendances : réinstallées seulement quand package-lock.json a changé.
+LOCK_SUM="$(sha256sum package-lock.json | cut -d' ' -f1)"
+if [ ! -d node_modules ] || [ "$(cat node_modules/.lock-sum 2>/dev/null || true)" != "$LOCK_SUM" ]; then
+  npm install --no-audit --no-fund
+  echo "$LOCK_SUM" > node_modules/.lock-sum
+fi
 npm run sync:userscript
 # Icône .icns : sur Linux electron-builder ne sait pas la dériver du PNG (il
 # appelle `sips`, outil macOS). png2icons (JS pur) la génère ici.
@@ -28,9 +33,9 @@ if [ ! -f build/icon.icns ]; then
   cp build/icon.icns "$SRC/desktop/build/icon.icns"
 fi
 export CSC_IDENTITY_AUTO_DISCOVERY=false
-npx electron-builder --mac zip --arm64 --x64 --publish never
-ls -la dist
-mkdir -p "$SRC/desktop/dist-mac"
-cp dist/*.dmg dist/*mac*.zip dist/latest-mac.yml "$SRC/desktop/dist-mac/" 2>/dev/null || true
-ls -la "$SRC/desktop/dist-mac"
-echo "[mac] terminé"
+# Cible « dir » : seulement les .app (dist/mac-arm64, dist/mac). Les zips
+# distribués sont faits par zip-mac-wsl.sh après la signature ; les faire
+# aussi ici doublait le temps de build pour des archives aussitôt remplacées.
+npx electron-builder --mac dir --arm64 --x64 --publish never
+ls -d dist/mac*/MEWFLIX.app
+echo "[mac] terminé — suite : sign-mac-wsl.sh puis zip-mac-wsl.sh"

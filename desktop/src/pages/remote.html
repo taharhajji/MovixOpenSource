@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#141518">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Télécommande MEWFLIX</title>
+  <style>
+    :root { color-scheme: dark; --bg: #141518; --card: #1e2129; --line: rgba(219,230,246,.14); --text: #e7edf7; --muted: #9fb3d1; --accent: #dbe6f6; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overscroll-behavior: none; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+    main { min-height: 100%; max-width: 460px; margin: 0 auto; padding: max(14px, env(safe-area-inset-top)) 16px max(18px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 14px; }
+    header { display: flex; align-items: center; justify-content: space-between; }
+    header b { letter-spacing: .12em; font-size: 15px; }
+    #status { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+    #status i { width: 9px; height: 9px; border-radius: 50%; background: #e0605a; display: inline-block; }
+    #status.on i { background: #4ccf7a; }
+    button { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 16px; font: 600 15px/1 inherit; padding: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 52px; transition: transform .06s, background .12s; }
+    button:active, button.hit { transform: scale(.95); background: #2b3040; }
+    .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .tabs button { min-height: 46px; font-size: 14px; }
+    .pad { position: relative; width: min(78vw, 320px); aspect-ratio: 1; margin: 4px auto; border-radius: 50%; background: var(--card); border: 1px solid var(--line); }
+    .pad button { position: absolute; background: transparent; border: 0; min-height: 0; font-size: 30px; color: var(--accent); }
+    .pad .up { left: 30%; right: 30%; top: 0; height: 33%; }
+    .pad .down { left: 30%; right: 30%; bottom: 0; height: 33%; }
+    .pad .left { top: 30%; bottom: 30%; left: 0; width: 33%; }
+    .pad .right { top: 30%; bottom: 30%; right: 0; width: 33%; }
+    .pad .ok { left: 31%; right: 31%; top: 31%; bottom: 31%; border-radius: 50%; background: var(--accent); color: var(--bg); font-size: 22px; font-weight: 800; }
+    .pad .ok:active, .pad .ok.hit { background: #b9c9e4; }
+    .row { display: grid; gap: 8px; }
+    .row.three { grid-template-columns: repeat(3, 1fr); }
+    .row.five { grid-template-columns: repeat(5, 1fr); }
+    .row.five button { font-size: 20px; }
+    .big { font-size: 22px; }
+    form { display: flex; gap: 8px; }
+    input { flex: 1; min-width: 0; border-radius: 14px; border: 1px solid var(--line); background: var(--card); color: var(--text); font: 16px inherit; padding: 0 14px; height: 52px; user-select: text; -webkit-user-select: text; }
+    form button { padding: 0 16px; background: var(--accent); color: var(--bg); border: 0; }
+    small { color: var(--muted); text-align: center; display: block; }
+  </style>
+</head>
+<body>
+  <main>
+    <header><b>MEWFLIX · TÉLÉCOMMANDE</b><span id="status"><i></i><span id="status-text">connexion…</span></span></header>
+    <div class="tabs">
+      <button data-nav="home">Accueil</button>
+      <button data-nav="movies">Films</button>
+      <button data-nav="series">Séries</button>
+      <button data-nav="live">TV en direct</button>
+      <button data-nav="search">Recherche</button>
+      <button data-nav="settings">Réglages</button>
+    </div>
+    <div class="pad" aria-label="Navigation">
+      <button class="up" data-key="up" data-repeat aria-label="Haut">▲</button>
+      <button class="left" data-key="left" data-repeat aria-label="Gauche">◀</button>
+      <button class="ok" data-key="ok" aria-label="OK">OK</button>
+      <button class="right" data-key="right" data-repeat aria-label="Droite">▶</button>
+      <button class="down" data-key="down" data-repeat aria-label="Bas">▼</button>
+    </div>
+    <div class="row three">
+      <button data-key="back">↩ Retour</button>
+      <button data-key="playpause" class="big" aria-label="Lecture / pause">⏯</button>
+      <button data-key="home">⌂ Menu</button>
+    </div>
+    <div class="row five">
+      <button data-key="rewind" aria-label="Reculer de 30 secondes">⏪</button>
+      <button data-key="voldown" data-repeat aria-label="Baisser le son">🔉</button>
+      <button data-key="mute" aria-label="Couper le son">🔇</button>
+      <button data-key="volup" data-repeat aria-label="Monter le son">🔊</button>
+      <button data-key="forward" aria-label="Avancer de 30 secondes">⏩</button>
+    </div>
+    <form id="text-form" autocomplete="off">
+      <input id="text" type="search" inputmode="search" enterkeyhint="search" placeholder="Rechercher un film, une série…" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <button type="submit">Chercher</button>
+    </form>
+    <small>Garde cette page ouverte : elle reste reliée à la télé.</small>
+  </main>
+  <script>
+    (function () {
+      'use strict';
+      var token = new URLSearchParams(location.search).get('t') || '';
+      var statusEl = document.getElementById('status');
+      var statusText = document.getElementById('status-text');
+      function setStatus(ok) { statusEl.className = ok ? 'on' : ''; statusText.textContent = ok ? 'reliée à la télé' : 'télé injoignable'; }
+      function send(cmd) {
+        return fetch('/cmd?t=' + encodeURIComponent(token), {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(cmd), keepalive: true,
+        }).then(function (r) { setStatus(r.ok); return r.ok; }).catch(function () { setStatus(false); return false; });
+      }
+      function buzz() { try { if (navigator.vibrate) navigator.vibrate(12); } catch (e) {} }
+      function flash(el) { el.classList.add('hit'); setTimeout(function () { el.classList.remove('hit'); }, 110); }
+
+      // Appui simple, et répétition tant que le doigt reste posé (flèches, volume).
+      var timer = null;
+      function stopRepeat() { if (timer) { clearTimeout(timer); clearInterval(timer); timer = null; } }
+      Array.prototype.forEach.call(document.querySelectorAll('button[data-key]'), function (btn) {
+        var fire = function () { buzz(); flash(btn); send({ type: 'key', key: btn.getAttribute('data-key') }); };
+        btn.addEventListener('pointerdown', function (event) {
+          event.preventDefault();
+          fire();
+          if (!btn.hasAttribute('data-repeat')) return;
+          stopRepeat();
+          timer = setTimeout(function () { timer = setInterval(fire, 140); }, 420);
+        });
+        ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (name) { btn.addEventListener(name, stopRepeat); });
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('button[data-nav]'), function (btn) {
+        btn.addEventListener('click', function () { buzz(); flash(btn); send({ type: 'nav', screen: btn.getAttribute('data-nav') }); });
+      });
+
+      // Texte : envoyé à chaque frappe (la télé filtre en direct), validé par « Chercher ».
+      var input = document.getElementById('text');
+      var typing = null;
+      input.addEventListener('input', function () {
+        clearTimeout(typing);
+        typing = setTimeout(function () { send({ type: 'text', text: input.value }); }, 220);
+      });
+      document.getElementById('text-form').addEventListener('submit', function (event) {
+        event.preventDefault();
+        clearTimeout(typing);
+        send({ type: 'text', text: input.value, submit: true });
+        input.blur();
+      });
+
+      function ping() {
+        fetch('/state?t=' + encodeURIComponent(token), { cache: 'no-store' })
+          .then(function (r) { setStatus(r.ok); }).catch(function () { setStatus(false); });
+      }
+      ping();
+      setInterval(ping, 5000);
+      document.addEventListener('visibilitychange', function () { if (!document.hidden) ping(); });
+    })();
+  </script>
+</body>
+</html>
