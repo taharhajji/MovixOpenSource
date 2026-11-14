@@ -797,6 +797,7 @@
       ]),
       el('div', { class: 'tv-note', style: 'margin-top:0' }, ['Ou tape cette adresse dans le navigateur du téléphone : ', address]),
       el('div', { class: 'tv-note', style: 'margin-top:0;font-size:1.9vh' , text: 'Si la page ne s’ouvre pas : au premier lancement, Windows demande d’autoriser ' + APP + ' sur le réseau — réponds « Autoriser ».' }),
+      el('div', { class: 'tv-note', style: 'margin-top:0;font-size:1.9vh', text: 'Wi-Fi de résidence, d’hôtel ou d’école : les appareils n’y communiquent pas entre eux. Active le « Point d’accès sans fil mobile » de Windows, connecte ton téléphone dessus, puis rouvre ce QR code.' }),
       el('button', { class: 'tv-btn primary', 'data-f': true, text: 'C’est bon', on: { click: closeLayer } }),
     ])]);
     openLayer(el('div', { class: 'tv-layer' }, [dialog]));

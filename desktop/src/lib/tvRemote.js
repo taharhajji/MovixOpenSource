@@ -38,16 +38,40 @@ function parseCommand(raw) {
   return null;
 }
 
-/** Adresse IPv4 du réseau local (192.168.x, 10.x, 172.16-31.x de préférence). */
-function lanAddress(interfaces = os.networkInterfaces()) {
+// Partage de connexion de Windows (« Point d'accès sans fil mobile ») : le PC y
+// porte toujours cette adresse. C'est le seul chemin sur un Wi-Fi de
+// résidence, d'hôtel ou d'école, où les appareils sont isolés les uns des autres.
+const WINDOWS_HOTSPOT_PREFIX = '192.168.137.';
+// Cartes virtuelles (WSL, machines virtuelles, VPN) : jamais joignables par le téléphone.
+const VIRTUAL_ADAPTER = /vEthernet|WSL|Hyper-V|VirtualBox|VMware|Docker|Loopback|Tailscale|ZeroTier|VPN/i;
+
+/**
+ * Adresses IPv4 de ce PC, de la plus probable à la moins probable pour un
+ * téléphone : point d'accès Windows, réseau privé d'une vraie carte, puis le reste.
+ */
+function lanAddresses(interfaces = os.networkInterfaces()) {
+  const isPrivate = (ip) => /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip);
+  const rank = (name, ip) => {
+    if (ip.startsWith(WINDOWS_HOTSPOT_PREFIX)) return 0;
+    const virtual = VIRTUAL_ADAPTER.test(name);
+    if (isPrivate(ip)) return virtual ? 2 : 1;
+    return virtual ? 4 : 3;
+  };
   const found = [];
-  for (const list of Object.values(interfaces)) {
+  for (const [name, list] of Object.entries(interfaces)) {
     for (const item of list || []) {
-      if (item && item.family === 'IPv4' && !item.internal) found.push(item.address);
+      if (item && item.family === 'IPv4' && !item.internal) found.push({ address: item.address, rank: rank(name, item.address) });
     }
   }
-  const isPrivate = (ip) => /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip);
-  return found.find(isPrivate) || found[0] || '127.0.0.1';
+  return found
+    .map((entry, index) => ({ ...entry, index }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map((entry) => entry.address);
+}
+
+/** Adresse à donner au téléphone (voir lanAddresses), boucle locale faute de mieux. */
+function lanAddress(interfaces = os.networkInterfaces()) {
+  return lanAddresses(interfaces)[0] || '127.0.0.1';
 }
 
 /** Jeton de 64 bits : inatteignable par essais, encore recopiable à la main. */
@@ -207,4 +231,4 @@ function listen(server, port) {
   });
 }
 
-module.exports = { KEYS, SCREENS, createRemoteServer, isLocalAddress, lanAddress, listen, newToken, parseCommand };
+module.exports = { KEYS, SCREENS, createRemoteServer, isLocalAddress, lanAddress, lanAddresses, listen, newToken, parseCommand };

@@ -67,6 +67,22 @@ test('lanAddress : adresse privée IPv4 de préférence, repli sur la boucle loc
   assert.equal(tvRemote.lanAddress({ vpn: interfaces.vpn }), '100.64.0.9');
 });
 
+test('lanAddress : point d’accès Windows d’abord, cartes virtuelles en dernier', () => {
+  const ip = (address) => [{ family: 'IPv4', internal: false, address }];
+  // Wi-Fi de résidence (appareils isolés) + partage de connexion du PC + WSL.
+  const residence = {
+    'vEthernet (WSL (Hyper-V firewall))': ip('172.20.80.1'),
+    'Wi-Fi 2': ip('10.188.70.104'),
+    'Connexion au réseau local* 10': ip('192.168.137.1'),
+  };
+  assert.equal(tvRemote.lanAddress(residence), '192.168.137.1', 'le téléphone est sur le point d’accès du PC');
+  assert.deepEqual(tvRemote.lanAddresses(residence), ['192.168.137.1', '10.188.70.104', '172.20.80.1']);
+  const home = { 'vEthernet (WSL)': ip('172.20.80.1'), 'Wi-Fi': ip('192.168.1.42') };
+  assert.equal(tvRemote.lanAddress(home), '192.168.1.42', 'la carte WSL ne passe jamais devant le vrai Wi-Fi');
+  assert.equal(tvRemote.lanAddress({ 'vEthernet (WSL)': ip('172.20.80.1') }), '172.20.80.1', 'faute de mieux');
+  assert.deepEqual(tvRemote.lanAddresses({}), []);
+});
+
 test('newToken : seize caractères hexadécimaux, différents à chaque appel', () => {
   const a = tvRemote.newToken();
   assert.match(a, /^[0-9a-f]{16}$/);
