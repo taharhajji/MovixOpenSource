@@ -25,6 +25,16 @@ C'est la même chose que le [mode TV de l'appli de bureau](../desktop/README.md#
 - Chaque touche appelle `window.__mewflixAndroidKey(touche)` ; la valeur renvoyée dit à l'activité quoi faire (`done`,
   `exit`, `tap` = toucher le centre de l'écran, `wait` = attendre la réponse des cadres). **Rien n'est exposé à la page**
   en dehors de `MewflixNative` (pont GM), limité au cadre principal des pages du site.
+- **DNS chiffré (1.0.1)** : les box Internet bloquent le site au niveau du DNS (« domaine inexistant »), ce qui donnait
+  « Serveur injoignable » puis « Connexion impossible » sur toutes les télés. Tout le trafic passe donc par un relais
+  local (`LocalProxy`, 127.0.0.1, imposé au WebView par `ProxyController`) qui résout les noms par DNS-over-HTTPS
+  (`DohResolver` : Cloudflare, Google, Quad9, joints par leur adresse IP ; DNS du système en dernier recours).
+  Le relais n'ouvre que des tunnels `CONNECT` : le HTTPS n'est ni lu ni modifié. Même rôle que le « DNS sécurisé » du bureau.
+  Pour reproduire une box qui bloque : `EMU_DNS=192.0.2.1 emulator-wsl.sh start`.
+- Écran « Connexion impossible » : il affiche la cause du dernier échec et la version, à se faire transmettre.
+- **Lien d'installation** : `is.gd/mewflixtv` pointe sur le fichier `MEWFLIX-TV-1.0.0.apk` de la release `tv-v1.0.0`.
+  Un lien court ne se modifie pas : à chaque version, remplacer ce fichier (`gh release upload tv-v1.0.0 … --clobber`,
+  même nom) en plus de la release `tv-v<version>`, toujours créée avec `--latest=false`.
 - Pendant un chargement de page, l'écran « Chargement… » est affiché et les touches sont ignorées.
 - Si un miroir ne répond pas, le suivant de `mirrors.txt` est essayé ; faute de réseau, écran « Connexion impossible »
   (OK pour réessayer).
