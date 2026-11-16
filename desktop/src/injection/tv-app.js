@@ -384,6 +384,7 @@
   var wantsContent = false;   // écran tout juste affiché : le curseur va au contenu dès qu'il arrive
   var lastContentFocus = null;
   var renderSeq = 0;          // change à chaque écran : les réponses tardives d'un écran quitté sont ignorées
+  var userMoved = false;      // un appui ou la souris depuis l'affichage de l'écran : le curseur n'est plus replacé d'office
 
   function current() { return stack[stack.length - 1]; }
   function saveState() {
@@ -513,7 +514,13 @@
         strip.appendChild(card(item, Object.assign({ prefix: title }, options || {}, entry.options || {})));
       });
       section.hidden = false;
-      if (!applyPending() && focusIsLost()) focusFirst('.tv-card');
+      if (applyPending()) return;
+      // Les rangées arrivent dans le désordre. Tant que personne n'a touché à la
+      // télécommande, le curseur remonte sur la première carte de la page ;
+      // ensuite on se contente de le garder à l'écran quand du contenu s'insère au-dessus.
+      var here = cursor();
+      if (focusIsLost() || (!userMoved && !layer && here && here.classList.contains('tv-card'))) focusFirst('.tv-card');
+      else if (here && !layer) reveal(here);
     }).catch(function () { /* rangée ignorée : les autres restent utilisables */ });
     return section;
   }
@@ -872,6 +879,7 @@
     screenApi = null;
     if (!pendingFocus) pendingFocus = entry.focus || '';
     wantsContent = true;
+    userMoved = Boolean(pendingFocus);   // curseur mémorisé à restaurer : pas de replacement d'office
     lastContentFocus = null;
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     clearMark();
@@ -913,6 +921,7 @@
   }
   function handleKey(key) {
     wake();
+    userMoved = true;
     if (key === 'up' || key === 'down' || key === 'left' || key === 'right') {
       // L'utilisateur a pris la main : le contenu qui arrive ne déplace plus le curseur.
       if (!layer) { wantsContent = false; pendingFocus = ''; }
@@ -983,6 +992,7 @@
   root.addEventListener('mousemove', function (event) {
     wake();
     var target = event.target && event.target.closest ? event.target.closest('[data-f]') : null;
+    if (target) userMoved = true;
     if (target && target !== cursor() && scope().contains(target)) {
       target.focus({ preventScroll: true });
       markFocus(target);

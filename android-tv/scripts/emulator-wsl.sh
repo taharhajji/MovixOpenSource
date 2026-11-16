@@ -42,8 +42,11 @@ case "${1:-}" in
     # Au premier plan : WSL arrête les processus d'une session dès qu'elle se
     # termine, l'émulateur doit donc garder la sienne (à lancer en tâche de fond
     # côté Windows, puis `emulator-wsl.sh wait` depuis une autre commande).
+    # EMU_DNS=<adresse> impose un serveur DNS à l'appareil virtuel. Avec une
+    # adresse qui ne répond pas (ex. 192.0.2.1), on reproduit une box qui bloque
+    # le site : l'appli doit quand même fonctionner grâce à son DNS chiffré.
     exec emulator -avd "$AVD" -no-window -no-audio -no-boot-anim -no-snapshot \
-      -gpu swiftshader_indirect -accel on -memory 2048
+      -gpu swiftshader_indirect -accel on -memory 2048 ${EMU_DNS:+-dns-server "$EMU_DNS"}
     ;;
   wait)
     adb wait-for-device

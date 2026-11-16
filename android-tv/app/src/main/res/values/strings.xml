@@ -4,6 +4,9 @@
     <string name="loading">Chargement…</string>
     <string name="next_server">Serveur injoignable, essai du suivant…</string>
     <string name="offline">Connexion impossible.\n\nVérifie que la télé est bien connectée à Internet,\npuis appuie sur OK pour réessayer.</string>
+    <string name="offline_detail">Détail à transmettre si ça persiste : %1$s · version %2$s</string>
+    <string name="slow_server">délai dépassé</string>
+    <string name="bad_certificate">certificat refusé</string>
 
     <color name="background">#0D0E11</color>
     <color name="text">#E7EDF7</color>

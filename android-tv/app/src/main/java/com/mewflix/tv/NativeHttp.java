@@ -6,6 +6,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
 import java.net.URL;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -22,6 +24,15 @@ import java.util.zip.InflaterInputStream;
  */
 final class NativeHttp {
     private static final int MAX_REDIRECTS = 5;
+    /**
+     * Port du relais local ({@link LocalProxy}) : les noms y sont résolus par DNS
+     * chiffré, hors de portée du blocage de la box. 0 = connexion directe.
+     */
+    private static volatile int proxyPort;
+
+    static void useLocalProxy(int port) {
+        proxyPort = port;
+    }
 
     /** Réponse ouverte : le corps reste à lire, puis {@link #close()}. */
     static final class Response {
@@ -100,7 +111,9 @@ final class NativeHttp {
             if (!currentUrl.startsWith("https://") && !currentUrl.startsWith("http://")) throw new IOException("URL non supportée");
             Map<String, String> headers = HostRules.apply(currentUrl, baseHeaders);
             dropUnsupportedEncodings(headers);
-            HttpURLConnection connection = (HttpURLConnection) new URL(currentUrl).openConnection();
+            int relay = proxyPort;
+            Proxy route = relay > 0 ? new Proxy(Proxy.Type.HTTP, new InetSocketAddress("127.0.0.1", relay)) : Proxy.NO_PROXY;
+            HttpURLConnection connection = (HttpURLConnection) new URL(currentUrl).openConnection(route);
             if (current != null) current.set(connection);
             connection.setInstanceFollowRedirects(false);
             connection.setConnectTimeout(timeoutMs);

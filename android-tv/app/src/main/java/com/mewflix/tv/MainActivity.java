@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
+import android.net.http.SslError;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -21,6 +22,7 @@ import android.view.WindowManager;
 import android.webkit.ConsoleMessage;
 import android.webkit.CookieManager;
 import android.webkit.RenderProcessGoneDetail;
+import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -31,6 +33,8 @@ import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
+import androidx.webkit.ProxyConfig;
+import androidx.webkit.ProxyController;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 
@@ -45,6 +49,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -91,6 +96,11 @@ public class MainActivity extends Activity {
     /** Page en cours de chargement : écran d'attente affiché, touches ignorées. */
     private boolean pageLoading = true;
     private long readySince;
+    private final LocalProxy proxy = new LocalProxy();
+    /** Vrai dès que le serveur en cours a renvoyé une page : il n'est plus à remplacer. */
+    private boolean mirrorConfirmed;
+    /** Dernière cause d'échec, affichée sur l'écran « Connexion impossible ». */
+    private String lastFailure = "";
 
     private FrameLayout root;
     private WebView web;
@@ -121,7 +131,29 @@ public class MainActivity extends Activity {
 
         configureWebView(background);
         hideSystemBars();
-        loadMirror(0);
+        startNetwork();
+    }
+
+    /**
+     * Démarre le relais local (noms résolus par DNS chiffré, hors de portée du
+     * blocage de la box) et y fait passer tout le trafic du WebView, puis charge
+     * le site. Sans relais possible (WebView ancien), le DNS du système sert.
+     */
+    private void startNetwork() {
+        int port = 0;
+        try {
+            port = proxy.start();
+        } catch (IOException err) {
+            Log.w(TAG, "relais local indisponible, DNS du système", err);
+        }
+        NativeHttp.useLocalProxy(port);
+        if (port > 0 && WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
+            ProxyConfig config = new ProxyConfig.Builder().addProxyRule("127.0.0.1:" + port).addDirect().build();
+            ProxyController.getInstance().setProxyOverride(config, handler::post, () -> loadMirror(0));
+        } else {
+            if (port > 0) Log.w(TAG, "WebView ancien : pas de relais pour les pages, DNS du système");
+            loadMirror(0);
+        }
     }
 
     /**
@@ -242,6 +274,7 @@ public class MainActivity extends Activity {
         mirrorIndex = index;
         loadToken += 1;
         offline = false;
+        mirrorConfirmed = false;
         showStatus(getString(index == 0 ? R.string.loading : R.string.next_server));
         Log.i(TAG, "chargement du serveur " + (index + 1) + "/" + mirrors.size());
         web.loadUrl(mirrors.get(index) + BuildConfig.HOME_PATH);
@@ -249,6 +282,7 @@ public class MainActivity extends Activity {
 
     private void mirrorFailed(int token, String reason) {
         if (token != loadToken) return;
+        lastFailure = reason;
         Log.w(TAG, "serveur " + (mirrorIndex + 1) + " en échec : " + reason);
         if (mirrorIndex + 1 < mirrors.size()) loadMirror(mirrorIndex + 1);
         else showOffline();
@@ -263,19 +297,25 @@ public class MainActivity extends Activity {
         offline = true;
         loadToken += 1;
         web.stopLoading();
-        showStatus(getString(R.string.offline));
+        String detail = getString(R.string.offline_detail, lastFailure.isEmpty() ? "?" : lastFailure, BuildConfig.VERSION_NAME);
+        showStatus(getString(R.string.offline) + "\n\n" + detail);
     }
 
     /** Retire l'écran d'attente dès que l'interface télé (ou le lecteur) est en place. */
     private void waitUntilReady(final int token, final long since) {
         if (token != loadToken || since != readySince || !pageLoading || offline) return;
         if (SystemClock.uptimeMillis() - since > READY_TIMEOUT_MS) {
-            pageReady();
+            // Serveur resté muet depuis son premier chargement : on passe au suivant.
+            if (mirrorConfirmed) pageReady();
+            else mirrorFailed(token, getString(R.string.slow_server));
             return;
         }
         web.evaluateJavascript(STATE_CALL, value -> {
             if (token != loadToken || since != readySince || offline) return;
-            if (String.valueOf(value).contains("\\\"ready\\\":true")) pageReady();
+            String state = String.valueOf(value);
+            // Le script de l'appli répond : la page vient bien du site.
+            if (state.contains("\\\"path\\\"")) mirrorConfirmed = true;
+            if (state.contains("\\\"ready\\\":true")) pageReady();
             else handler.postDelayed(() -> waitUntilReady(token, since), READY_POLL_MS);
         });
     }
@@ -417,6 +457,7 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         handler.removeCallbacksAndMessages(null);
         gmBridge.shutdown();
+        proxy.stop();
         root.removeView(web);
         web.destroy();
         super.onDestroy();
@@ -485,10 +526,25 @@ public class MainActivity extends Activity {
         }
 
         @Override
-        public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
-            if (request.isForMainFrame() && response.getStatusCode() >= HTTP_SERVER_ERROR) {
-                mirrorFailed(loadToken, "HTTP " + response.getStatusCode());
+        public void onReceivedSslError(WebView view, SslErrorHandler sslHandler, SslError error) {
+            sslHandler.cancel();
+            // Certificat d'une page de blocage (DNS détourné) : ce serveur est inutilisable.
+            if (!mirrorConfirmed && isSiteHost(Uri.parse(error.getUrl()).getHost())) {
+                mirrorFailed(loadToken, getString(R.string.bad_certificate));
             }
+        }
+
+        @Override
+        public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
+            if (!request.isForMainFrame() || response.getStatusCode() < HTTP_SERVER_ERROR) return;
+            // Vérification anti-robot de Cloudflare : la page se débloque toute seule, le serveur est vivant.
+            Map<String, String> headers = response.getResponseHeaders();
+            if (headers != null) {
+                for (String name : headers.keySet()) {
+                    if ("cf-mitigated".equalsIgnoreCase(name)) return;
+                }
+            }
+            mirrorFailed(loadToken, "HTTP " + response.getStatusCode());
         }
 
         @Override
