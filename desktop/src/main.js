@@ -1187,6 +1187,8 @@ function bootstrap() {
             } catch (e) { return null; }
           })(),
           theme: !!document.getElementById('orbit-theme'),
+          heroPromos: (function() { try { return localStorage.getItem('hero_promos_cache'); } catch (e) { return null; } })(),
+          heroPromoVisible: /jouer sur roblox|fait par les mêmes développeurs/i.test(document.body ? document.body.innerText : ''),
           vip: (function() {
             try {
               localStorage.removeItem('is_vip');

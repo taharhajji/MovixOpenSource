@@ -139,3 +139,29 @@ test('lecteurs embed : désactivés par défaut, réactivés quand le mode est �
     assert.equal(entry.enabled, true, `source ${entry.id} (mode on)`);
   }
 });
+
+test('promos du carrousel d\'accueil : liste vide, cache vidé, suivi des clics bloqué', async () => {
+  const code = buildSiteTweaks({ appName: 'MEWFLIX' });
+  const network = [];
+  const window = {
+    fetch: (url) => { network.push(String(url)); return Promise.resolve(new Response('{"ok":true}')); },
+  };
+  const navigator = { sendBeacon: (url) => { network.push(`beacon ${url}`); return true; } };
+  const store = new Map([['hero_promos_cache', '{"promos":[{"id":"abcdef1234","title":"Pencil RNG"}],"carousels":{}}']]);
+  const localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
+  const document = { documentElement: null, head: null, getElementById: () => null, querySelectorAll: () => [], addEventListener: () => {} };
+  const globals = { window, document, localStorage, navigator, location: { href: 'https://movix.luxe/' }, URL, Response, console, JSON };
+  new Function(...Object.keys(globals), code)(...Object.values(globals));
+
+  assert.equal(store.get('hero_promos_cache'), '{"promos":[],"carousels":{}}');
+  const promos = await window.fetch('https://api.movix.luxe/api/hero-promos');
+  assert.deepEqual(await promos.json(), { promos: [], carousels: {} });
+  await window.fetch('https://api.movix.luxe/api/tmdb/movie/1');
+  assert.equal(navigator.sendBeacon('https://api.movix.luxe/api/hero-promos/abcdef1234/click'), true);
+  navigator.sendBeacon('https://stats.example/ok');
+  assert.deepEqual(network, ['https://api.movix.luxe/api/tmdb/movie/1', 'beacon https://stats.example/ok']);
+});
+
+test('promos du carrousel : désactivables', () => {
+  assert.ok(!buildSiteTweaks({ appName: 'X', blockHeroPromos: false }).includes('hero_promos_cache'));
+});

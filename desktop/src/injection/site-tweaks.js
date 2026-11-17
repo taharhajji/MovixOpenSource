@@ -809,7 +809,44 @@ function buildMediaRelay(relayPath, hosts) {
 `;
 }
 
+function buildHeroPromoBlock() {
+  return `
+  // --- Promos maison du carrousel d'accueil ------------------------------------------
+  // Les admins du site peuvent glisser des diapos « PUBLICITÉ » dans le carrousel
+  // (jeu Roblox « fait par les mêmes développeurs »…), servies par
+  // GET /api/hero-promos et gardées en cache dans localStorage. La liste est
+  // remplacée par une liste vide, le cache vidé, et les liens de suivi
+  // (/go, /click) ne partent jamais : aucune promo, actuelle ou future.
+  (function blockHeroPromos() {
+    var EMPTY = '{"promos":[],"carousels":{}}';
+    var PROMO_PATH = new RegExp('/api/hero-promos(?:[/?#]|$)');
+    try { localStorage.setItem('hero_promos_cache', EMPTY); } catch (e) { /* stockage indisponible */ }
+    function isPromoUrl(url) {
+      try { return PROMO_PATH.test(new URL(String(url), location.href).pathname); } catch (e) { return false; }
+    }
+    if (typeof window.fetch === 'function') {
+      var promoFetch = window.fetch;
+      window.fetch = function(input, init) {
+        var url = typeof input === 'string' ? input : (input && typeof input.href === 'string' ? input.href : (input && input.url));
+        if (url && isPromoUrl(url)) {
+          return Promise.resolve(new Response(EMPTY, { status: 200, headers: { 'content-type': 'application/json' } }));
+        }
+        return promoFetch.apply(this, arguments);
+      };
+    }
+    if (navigator.sendBeacon) {
+      var beacon = navigator.sendBeacon;
+      navigator.sendBeacon = function(url) {
+        if (isPromoUrl(url)) return true;
+        return beacon.apply(navigator, arguments);
+      };
+    }
+  })();
+`;
+}
+
 /**
+
  * @param {object} options
  * @param {string} options.appName
  * @param {string[]|null} [options.popupSafeHosts]  hôtes externes autorisés par window.open ;
@@ -827,6 +864,7 @@ function buildMediaRelay(relayPath, hosts) {
  *   désactivés dans l'ordre de priorité et masqués du panneau (version web)
  * @param {{path: string, hosts: string[]}|null} [options.mediaRelay]  relais /media du site web
  *   pour les hôtes HLS qui refusent l'Origin du site (null = aucun)
+ * @param {boolean} [options.blockHeroPromos]  retire les diapos « publicité » du carrousel d'accueil
  * @returns {string} code JS à exécuter dans la page avant ses scripts
  */
 function buildSiteTweaks({
@@ -845,6 +883,7 @@ function buildSiteTweaks({
   mediaRelay = null,
   disableEmbedSources = false,
   themeCss = '',
+  blockHeroPromos = true,
   sandboxExemptHosts = ['challenges.cloudflare.com', 'youtube.com', 'youtube-nocookie.com', 'player.vimeo.com', 'accounts.google.com', 'discord.com'],
 } = {}) {
   const parts = [];
@@ -854,6 +893,7 @@ function buildSiteTweaks({
   var APP_NAME = ${JSON.stringify(String(appName || 'MEWFLIX'))};
   var ACCENT = ${JSON.stringify(String(accent))};
 `);
+  if (blockHeroPromos) parts.push(buildHeroPromoBlock());
   if (localVip) parts.push(buildLocalVip());
   if (hideSiteBranding) parts.push(buildHideBranding(brandIconUrl));
   if (navShortcut && navShortcut.href) parts.push(buildNavShortcut(navShortcut));
