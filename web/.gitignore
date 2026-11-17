@@ -8,3 +8,5 @@ dist/
 .env.relay.local
 .wrangler/
 relay-worker/.wrangler/
+netlify-site/
+relay-worker/site-assets/

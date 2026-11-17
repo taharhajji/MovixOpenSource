@@ -3,9 +3,17 @@ main = "worker.js"
 compatibility_date = "2026-10-01"
 workers_dev = true
 
-# Hôtes relayés sans signature (suffixes, séparés par des virgules).
+# Fichiers du site web (bundles, avatars, images) produits par
+# `node web/scripts/build.mjs --asset-base https://mewflix-media-relay.mewflix.workers.dev`.
+# Servis par Cloudflare avant le script : gratuits et sans limite de requêtes.
+[assets]
+directory = "./site-assets"
+
 [vars]
+# Hôtes relayés sans signature (suffixes, séparés par des virgules).
 MEDIA_RELAY_HOSTS = "finepulfe.xyz"
+# Sites autorisés à appeler /api depuis le navigateur (CORS), séparés par des virgules.
+ALLOWED_ORIGINS = "https://mewflix.netlify.app"
 
 # Secret de signature : `npx wrangler secret put MEDIA_RELAY_SECRET`
 # (même valeur que la variable MEDIA_RELAY_SECRET du projet Vercel).

@@ -737,6 +737,9 @@ function buildMediaRelay(relayPath, hosts) {
   // qui va chercher le flux sans Origin et réécrit les playlists.
   (function relayBlockedMedia() {
     var RELAY = ${JSON.stringify(String(relayPath))};
+    // Chemin relatif (/media, relais du site) ou adresse absolue (relais sur un
+    // autre domaine, pour que la vidéo ne transite pas par l'hébergeur du site).
+    var RELAY_BASE = /^https?:\\/\\//i.test(RELAY) ? RELAY.replace(/\\/+$/, '') : location.origin + RELAY;
     var HOSTS = ${JSON.stringify(hosts)};
     function hostMatch(hostname) {
       hostname = String(hostname || '').toLowerCase();
@@ -750,11 +753,12 @@ function buildMediaRelay(relayPath, hosts) {
       try {
         var absolute = new URL(String(url), location.href);
         if (absolute.origin === location.origin) return null;
+        if (absolute.href.indexOf(RELAY_BASE + '/') === 0) return null;
         if (absolute.protocol !== 'http:' && absolute.protocol !== 'https:') return null;
         if (!hostMatch(absolute.hostname)) return null;
         var segments = absolute.pathname.split('/');
         var name = segments[segments.length - 1] || 'media';
-        return location.origin + RELAY + '/' + encodeURIComponent(name) + '?u=' + encodeURIComponent(absolute.href);
+        return RELAY_BASE + '/' + encodeURIComponent(name) + '?u=' + encodeURIComponent(absolute.href);
       } catch (e) { return null; }
     }
     window.__orbitRelayMediaUrl = relayed;

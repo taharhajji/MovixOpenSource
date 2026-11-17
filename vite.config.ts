@@ -195,8 +195,19 @@ export default defineConfig(({ mode, command }) => {
   const buildEnv = loadEnv(mode, process.cwd(), '')
   const glitchtipAuthToken = command === 'build' ? (buildEnv.GLITCHTIP_AUTH_TOKEN || '').trim() : ''
 
+  // Build web MEWFLIX hébergé sur une offre gratuite (web/scripts/build.mjs
+  // --asset-base) : les fichiers hachés JS/CSS/images sont servis par un CDN
+  // séparé, la page d'accueil et le manifeste PWA restent sur le domaine du site.
+  const assetBase = (process.env.MEWFLIX_ASSET_BASE || '').trim().replace(/\/*$/, '/')
+  const renderBuiltUrl = assetBase !== '/'
+    ? (filename: string) => (filename.startsWith('assets/') && !/\.(json|webmanifest)$/i.test(filename)
+      ? assetBase + filename
+      : undefined)
+    : undefined
+
   return {
     logLevel: 'warn',
+    ...(renderBuiltUrl ? { experimental: { renderBuiltUrl } } : {}),
     plugins: [
       react(),
       injectPublicConfig(),

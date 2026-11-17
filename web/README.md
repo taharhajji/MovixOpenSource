@@ -103,3 +103,34 @@ Tests : `node --test web/tests/*.test.mjs` (relais, signature, thème) et `cd de
 - Les chaînes **IPTV** (onglet « IPTV Web ») sont réservées par l'API aux clés VIP réelles
   (`x-access-key`) : le statut VIP local de MEWFLIX ne suffit pas ; il faut une clé générée
   par un administrateur de l'API (`POST /admin/vip-keys`), à saisir dans le site.
+
+## Netlify gratuit + Worker Cloudflare (17 novembre 2026)
+
+En ligne sur **https://mewflix.netlify.app** (équipe Netlify gratuite : 300 crédits/mois, 15 par mise
+en ligne, 20 par Go servi ; le site se met en pause s'ils sont épuisés, rien n'est facturé).
+Pour ne pas les consommer, le site est coupé en deux :
+
+| Où | Quoi | Coût |
+| --- | --- | --- |
+| Netlify (`web/netlify-site/`, ~170 Ko) | `index.html`, `sw.js`, manifeste, une icône, `_redirects`, `_headers` | quelques Ko par visite |
+| Worker `mewflix-media-relay` (`relay-worker/site-assets/`) | bundles JS/CSS, avatars, images, wasm (fichiers statiques), `/api/*` (relais), `/media` (vidéo) | gratuit : fichiers illimités, 100 000 exécutions/jour, aucune facturation possible |
+
+```bash
+W=https://mewflix-media-relay.mewflix.workers.dev
+node web/scripts/build.mjs --origin $W --site https://mewflix.netlify.app --asset-base $W
+cd web/relay-worker && npx wrangler deploy          # fichiers + relais (gratuit, à refaire si les bundles changent)
+# puis publier web/netlify-site/ sur le projet Netlify « mewflix » (15 crédits : le faire rarement)
+```
+
+- `--asset-base` : Vite charge les fichiers hachés depuis le Worker (`experimental.renderBuiltUrl`,
+  le manifeste PWA reste sur le site), `split-static.mjs` sépare les deux dossiers et écrit les redirections
+  (`/api`, `/media` en 307, fichiers lourds en 301 vers le Worker, appli monopage en dernier).
+- Le relais `/api` du Worker n'accepte que les sites listés dans `ALLOWED_ORIGINS` (`wrangler.toml`) et localhost.
+- Une modification de la seule page d'accueil (retouches, extras) : `--skip-vite` suffit, le Worker n'a pas à être republié.
+- Les aperçus de déploiement Netlify restent protégés (connexion à l'équipe) ; seule la production est publique.
+- **Source « pulse » (finepulfe)** : depuis novembre, ce CDN refuse les requêtes venant d'un Worker
+  Cloudflare et toute requête portant un Origin ou un Referer. Le relais renvoie donc 403 et le site
+  propose les lecteurs externes (avec publicités, après accord). Les apps bureau et Android TV ne sont pas concernées
+  de la même façon (requêtes depuis l'IP du spectateur).
+- Lecteurs externes sans bac à sable (`sandboxEmbeds: false`) : plusieurs hébergeurs refusaient de lire
+  (« Sandbox not allowed »). Ils ne se chargent qu'après accord explicite.

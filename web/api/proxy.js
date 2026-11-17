@@ -24,7 +24,9 @@ import { RELAY_PATH, encodeHeadersParam, hostAllowed, publicOrigin, relayConfig,
 
 export const config = { runtime: 'edge' };
 
-const UPSTREAM = (process.env.UPSTREAM_API || 'https://api.movix.luxe').replace(/\/+$/, '');
+// `process` n'existe pas dans un Worker Cloudflare (relay-worker/worker.js).
+const UPSTREAM = ((typeof process !== 'undefined' && process.env && process.env.UPSTREAM_API)
+  || 'https://api.movix.luxe').replace(/\/+$/, '');
 
 const DROP_REQUEST_HEADERS = new Set([
   'host', 'origin', 'referer', 'connection', 'content-length', 'accept-encoding',

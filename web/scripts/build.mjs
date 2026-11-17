@@ -18,6 +18,7 @@ import { DEFAULT_RELAY_HOSTS, RELAY_PATH } from '../api/media.js';
 import { applyTheme } from './theme.mjs';
 import { buildWebExtras } from './web-extras.mjs';
 import { execSync } from 'node:child_process';
+import { splitForStaticHosts } from './split-static.mjs';
 
 const require = createRequire(import.meta.url);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -43,6 +44,10 @@ const SITE_DEFAULT = (process.env.MEWFLIX_SITE_URL || 'https://mewflix-app.verce
 const ORIGIN = arg('origin', process.env.MEWFLIX_ORIGIN || SITE_DEFAULT).replace(/\/+$/, '');
 const UPSTREAM = arg('upstream', process.env.UPSTREAM_API || 'https://api.movix.luxe').replace(/\/+$/, '');
 const SKIP_VITE = process.argv.includes('--skip-vite');
+// Hébergement gratuit (Netlify) : fichiers hachés, avatars, API et vidéo servis
+// par le Worker Cloudflare indiqué ici ; le site ne garde que sa page d'accueil.
+const ASSET_BASE = arg('asset-base', process.env.MEWFLIX_ASSET_BASE || '').replace(/\/+$/, '');
+const ASSET_ORIGIN = ASSET_BASE ? new URL(ASSET_BASE).origin : '';
 // Identifiant de build (cache du service worker, console) : sha git court + horodatage.
 const BUILD = (() => {
   let sha = 'dev';
@@ -60,6 +65,7 @@ const SITE_URL = arg('site', process.env.MEWFLIX_SITE_URL || ORIGIN || 'https://
 const env = {
   ...process.env,
   VITE_MAIN_API: ORIGIN,
+  MEWFLIX_ASSET_BASE: ASSET_BASE,
   VITE_SITE_URL: SITE_URL,
   VITE_WATCHPARTY_API: UPSTREAM,
   VITE_PROXIES_EMBED_API: process.env.VITE_PROXIES_EMBED_API || UPSTREAM,
@@ -158,7 +164,7 @@ if (existsSync(manifestPath)) {
 }
 
 // --- Service worker MEWFLIX (page hors-ligne, assets en cache) -------------------
-writeFileSync(join(DIST, 'sw.js'), readFileSync(join(WEB, 'public', 'sw.js'), 'utf8').replaceAll('__BUILD__', BUILD));
+writeFileSync(join(DIST, 'sw.js'), readFileSync(join(WEB, 'public', 'sw.js'), 'utf8').replaceAll('__BUILD__', BUILD).replaceAll('__ASSET_ORIGIN__', ASSET_ORIGIN));
 
 // --- index.html : titre, métadonnées, icônes, retouches de site ----------------
 const indexPath = join(DIST, 'index.html');
@@ -190,8 +196,14 @@ const tweaks = buildSiteTweaks({
   swiftfluxSource: 'off',
   storagePrefix: 'mewflix_web',
   popupSafeHosts: SAFE_EXTERNAL_HOSTS,
-  mediaRelay: { path: RELAY_PATH, hosts: DEFAULT_RELAY_HOSTS },
+  // Relais sur le domaine de l'API quand elle est ailleurs que le site : la
+  // vidéo ne doit jamais transiter par l'hébergeur du site (bande passante).
+  mediaRelay: { path: ORIGIN && ORIGIN !== SITE_URL ? `${ORIGIN}${RELAY_PATH}` : RELAY_PATH, hosts: DEFAULT_RELAY_HOSTS },
   disableEmbedSources: true,
+  // Pas de bac à sable sur les lecteurs externes : plusieurs hébergeurs refusent
+  // de lire dedans (« Sandbox not allowed »). Ils ne se chargent qu'après accord
+  // explicite (porte « pas de source sans publicité »), comme dans l'app de bureau.
+  sandboxEmbeds: false,
   brandIconUrl: '/mewflix-icon-192.png',
 });
 const tweaksTag = `<script id="mewflix-site-tweaks">${tweaks.replace(/<\/script/gi, '<\\/script')}</script>`;
@@ -217,3 +229,12 @@ writeFileSync(indexPath, html);
 const leftovers = (html.match(/movix/gi) || []).length;
 console.log(`[web] dist prêt : ${DIST}`);
 console.log(`[web] index.html : titre « ${title} », retouches injectées, ${leftovers} mention(s) « movix » restantes (identifiants techniques)`);
+
+// --- Découpage site / CDN (offres gratuites) ---------------------------------------
+if (ASSET_BASE) {
+  const siteDir = join(WEB, 'netlify-site');
+  const cdnDir = join(WEB, 'relay-worker', 'site-assets');
+  const result = splitForStaticHosts({ dist: DIST, siteDir, cdnDir, cdnBase: ASSET_BASE });
+  console.log(`[web] site léger : ${result.siteFiles} fichier(s) + ${result.redirects} règle(s) → ${siteDir}`);
+  console.log(`[web] CDN (${ASSET_BASE}) : ${result.cdnFiles} fichier(s) → ${cdnDir}`);
+}

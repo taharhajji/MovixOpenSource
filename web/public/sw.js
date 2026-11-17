@@ -12,6 +12,8 @@
  * les caches des versions précédentes.
  */
 const BUILD = '__BUILD__';
+// Origine du CDN des fichiers hachés (build --asset-base), vide sinon.
+const ASSET_ORIGIN = '__ASSET_ORIGIN__';
 const SHELL_CACHE = `mewflix-shell-${BUILD}`;
 const ASSET_CACHE = 'mewflix-assets-v1';
 const SHELL = ['/offline.html', '/mewflix-icon.png', '/mewflix-icon-192.png', '/mewflix-icon-512.png'];
@@ -89,7 +91,12 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
   let url;
   try { url = new URL(request.url); } catch (_) { return; }
-  if (url.origin !== self.location.origin) return;
+  if (url.origin !== self.location.origin) {
+    if (ASSET_ORIGIN && url.origin === ASSET_ORIGIN && url.pathname.startsWith('/assets/')) {
+      event.respondWith(cacheFirst(request, ASSET_CACHE));
+    }
+    return;
+  }
   const path = url.pathname;
   if (path.startsWith('/api/') || path.startsWith('/media/') || path === '/media' || path === '/sw.js') return;
 
