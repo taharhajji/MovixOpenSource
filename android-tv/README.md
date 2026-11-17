@@ -35,6 +35,10 @@ C'est la même chose que le [mode TV de l'appli de bureau](../desktop/README.md#
 - **Lien d'installation** : `is.gd/mewflixtv` pointe sur le fichier `MEWFLIX-TV-1.0.0.apk` de la release `tv-v1.0.0`.
   Un lien court ne se modifie pas : à chaque version, remplacer ce fichier (`gh release upload tv-v1.0.0 … --clobber`,
   même nom) en plus de la release `tv-v<version>`, toujours créée avec `--latest=false`.
+- **Pendant la lecture (1.0.2)** : OK = pause, ← → = reculer / avancer de 10 s ; le volume reste aux boutons volume
+  de la télécommande. ↑ ↓ (ou Menu) passent en mode « boutons » : un cadre circule entre les commandes du lecteur
+  (sources, sous-titres, réglages…), OK appuie, Retour revient à la vidéo. Même comportement dans le mode TV du bureau
+  (`tv-app.js`, `playerMode`).
 - Pendant un chargement de page, l'écran « Chargement… » est affiché et les touches sont ignorées.
 - Si un miroir ne répond pas, le suivant de `mirrors.txt` est essayé ; faute de réseau, écran « Connexion impossible »
   (OK pour réessayer).
