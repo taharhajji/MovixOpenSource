@@ -57,7 +57,8 @@ function pickNext(current, candidates, dir) {
  * lecteur externe). Fonction autonome, injectée par toString() comme pickNext.
  *
  * @param {Document} doc
- * @param {string} key  'ok' | 'playpause' | 'left' | 'right' | 'rewind' | 'forward' | 'up' | 'down' | 'volup' | 'voldown' | 'mute'
+ * @param {string} key  'ok' | 'playpause' | 'left' | 'right' | 'rewind' | 'forward' | 'volup' | 'voldown' | 'mute'
+ *   (↑ ↓ servent à circuler entre les boutons du lecteur, jamais au volume)
  * @returns {string} libellé à afficher à l'écran, '' si aucune vidéo chargée ou touche sans effet
  */
 function controlVideo(doc, key) {
@@ -98,8 +99,8 @@ function controlVideo(doc, key) {
   if (key === 'right') return seek(10);
   if (key === 'rewind') return seek(-30);
   if (key === 'forward') return seek(30);
-  if (key === 'up' || key === 'volup') return volume(0.1);
-  if (key === 'down' || key === 'voldown') return volume(-0.1);
+  if (key === 'volup') return volume(0.1);
+  if (key === 'voldown') return volume(-0.1);
   if (key === 'mute') {
     video.muted = !video.muted;
     return video.muted ? 'Son coupé' : 'Son rétabli';

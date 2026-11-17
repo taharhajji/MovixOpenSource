@@ -221,6 +221,7 @@ const siteScript = `/* MEWFLIX Android TV ${version} — généré par android-t
       heading: (document.querySelector('#mewflix-tv h1') || {}).textContent || '',
       layer: (document.querySelector('#mewflix-tv .tv-layer, #mewflix-tv .tv-live') || {}).className || '',
       videos: videos,
+      player: window.__mewflixTvPlayerState ? window.__mewflixTvPlayerState() : null,
       frames: document.querySelectorAll('iframe').length,
     });
   };

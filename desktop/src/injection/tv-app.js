@@ -79,35 +79,191 @@
   // Page de lecture : le lecteur du site occupe l'écran.
   // ======================================================================
   function playerMode() {
+    var ACCENT = CFG.accent || '#dbe6f6';
+    // Deux modes. « Vidéo » (par défaut) : OK = pause, ← → = reculer/avancer ;
+    // le volume reste aux boutons volume de la télécommande. « Boutons » (↑ ↓ ou
+    // Menu) : un cadre circule entre les boutons du lecteur (sources, épisodes,
+    // sous-titres…), OK appuie, Retour revient à la vidéo.
+    var navMode = false;
+    var current = null;
+    var lastRect = null;
+    var frame = null;
+    var navTimer = null;
+    var navTicks = 0;
+    var NAV_RETRY_MS = 300;
+    var NAV_RETRIES = 4;
+    var wakeShift = 0;
+    var SELECTOR = 'button, a[href], [role="button"], [role="menuitem"], [role="menuitemradio"], [role="option"], [role="tab"], [role="slider"], input, select';
     function leave() {
       location.assign(HOME);
     }
-    // Sans vidéo jouable (écran d'erreur ou de choix du site) : les flèches
-    // déplacent le curseur entre les boutons visibles.
-    function moveFocus(dir) {
-      var nodes = Array.prototype.filter.call(document.querySelectorAll('button, a[href], [role="button"], input, select'), function (n) {
-        var r = n.getBoundingClientRect();
-        return r.width > 8 && r.height > 8 && n.offsetParent !== null && !n.disabled;
-      });
-      if (!nodes.length || !pickNext) return;
-      var active = document.activeElement && nodes.indexOf(document.activeElement) >= 0 ? document.activeElement : null;
-      var index = pickNext(active ? active.getBoundingClientRect() : null, nodes.map(function (n) { return n.getBoundingClientRect(); }), dir);
-      if (index >= 0) { nodes[index].focus(); nodes[index].style.outline = '4px solid ' + (CFG.accent || '#dbe6f6'); }
+    function isShown(node) {
+      if (node.disabled || !node.getClientRects().length) return false;
+      var r = node.getBoundingClientRect();
+      if (r.width < 8 || r.height < 8 || r.bottom < 0 || r.right < 0 || r.top > innerHeight || r.left > innerWidth) return false;
+      var style = getComputedStyle(node);
+      return style.visibility !== 'hidden' && style.display !== 'none' && style.pointerEvents !== 'none';
     }
-    // Retourne 'no-video' quand la page n'a pas de vidéo à elle : le processus
-    // principal essaie alors les iframes des lecteurs externes, puis
-    // __mewflixTvFallback.
+    function buttons() {
+      return Array.prototype.filter.call(document.querySelectorAll(SELECTOR), isShown);
+    }
+    // Les commandes du lecteur du site n'apparaissent qu'au mouvement de la souris.
+    function wakeControls() {
+      var target = document.querySelector('video') || document.body;
+      if (!target) return;
+      var r = target.getBoundingClientRect();
+      // Position légèrement différente à chaque fois : le lecteur ignore un
+      // « mouvement » qui ne bouge pas.
+      wakeShift = (wakeShift + 1) % 4;
+      var init = { bubbles: true, clientX: r.left + r.width / 2 + wakeShift * 3, clientY: r.top + r.height * 0.8 };
+      try {
+        target.dispatchEvent(new MouseEvent('mousemove', init));
+        if (typeof PointerEvent === 'function') target.dispatchEvent(new PointerEvent('pointermove', init));
+      } catch (e) { /* navigateur ancien */ }
+    }
+    // Le lecteur du site redessine ses boutons (React) : l'élément encadré peut
+    // être remplacé par un autre au même endroit. On le retrouve par sa position.
+    function resolveCurrent() {
+      if (current && current.isConnected && isShown(current)) return current;
+      current = null;
+      if (!lastRect) return null;
+      var hit = document.elementFromPoint(lastRect.left + lastRect.width / 2, lastRect.top + lastRect.height / 2);
+      var node = hit && hit.closest ? hit.closest(SELECTOR) : null;
+      if (node && isShown(node)) current = node;
+      return current;
+    }
+    // Cadre dessiné par-dessus la page (le style du site ne peut pas le masquer).
+    function drawFrame() {
+      if (!frame || !frame.isConnected) {
+        frame = el('div', { 'aria-hidden': 'true', style: 'position:fixed;z-index:2147483646;pointer-events:none;border:4px solid ' + ACCENT + ';border-radius:10px;box-shadow:0 0 0 3px rgba(0,0,0,.6),0 0 22px ' + ACCENT + ';transition:left .12s,top .12s,width .12s,height .12s;display:none' });
+        (document.body || document.documentElement).appendChild(frame);
+      }
+      var node = navMode ? resolveCurrent() : null;
+      if (!node) { frame.style.display = 'none'; return; }
+      var r = node.getBoundingClientRect();
+      lastRect = r;
+      frame.style.left = (r.left - 6) + 'px';
+      frame.style.top = (r.top - 6) + 'px';
+      frame.style.width = (r.width + 12) + 'px';
+      frame.style.height = (r.height + 12) + 'px';
+      frame.style.display = 'block';
+    }
+    function mark(node) {
+      current = node;
+      lastRect = node.getBoundingClientRect();
+      try { node.focus({ preventScroll: true }); } catch (e) { /* élément non focalisable */ }
+      if (node.scrollIntoView) node.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      drawFrame();
+    }
+    // Sans curseur, on part du bord opposé de l'écran : ↑ vise d'abord la barre
+    // du bas (commandes du lecteur), ↓ les boutons du haut.
+    function moveFocus(dir) {
+      wakeControls();
+      var nodes = buttons();
+      if (!nodes.length || !pickNext) return false;
+      var here = resolveCurrent();
+      var from = here ? here.getBoundingClientRect() : (navMode ? lastRect : null);
+      if (!from) {
+        var y = dir === 'up' ? innerHeight + 1 : (dir === 'down' ? -1 : innerHeight / 2);
+        var x = dir === 'left' ? innerWidth + 1 : (dir === 'right' ? -1 : innerWidth / 2);
+        from = { left: x, right: x, top: y, bottom: y, width: 0, height: 0 };
+      }
+      var index = pickNext(from, nodes.map(function (n) { return n.getBoundingClientRect(); }), dir);
+      if (index < 0) return Boolean(here);
+      mark(nodes[index]);
+      return true;
+    }
+    // Les commandes masquées du lecteur réapparaissent un instant après le
+    // réveil : si aucun bouton n'est encore là, on réessaie peu après.
+    function enterNav(dir) {
+      lastRect = null;
+      current = null;
+      navMode = true;
+      showHud('Boutons du lecteur · Retour : revenir à la vidéo');
+      if (moveFocus(dir)) { startNav(); return; }
+      var tries = 0;
+      (function retry() {
+        setTimeout(function () {
+          if (!navMode || current) return;
+          if (moveFocus(dir)) { startNav(); return; }
+          tries += 1;
+          if (tries < NAV_RETRIES) { retry(); return; }
+          navMode = false;
+          showHud('Aucun bouton à l’écran');
+        }, NAV_RETRY_MS);
+      })();
+    }
+    function startNav() {
+      clearInterval(navTimer);
+      navTicks = 0;
+      // Tant que le mode boutons est actif : commandes du lecteur gardées
+      // visibles et cadre recalé si la page bouge.
+      navTimer = setInterval(function () {
+        navTicks += 1;
+        if (navTicks % 5 === 0) wakeControls();
+        drawFrame();
+      }, 400);
+    }
+    function exitNav() {
+      navMode = false;
+      clearInterval(navTimer);
+      current = null;
+      lastRect = null;
+      drawFrame();
+      showHud('▶ Vidéo');
+    }
+    window.__mewflixTvPlayerState = function () {
+      var node = navMode ? resolveCurrent() : null;
+      var name = node ? (node.getAttribute('aria-label') || node.getAttribute('title') || node.textContent || node.tagName) : '';
+      return { nav: navMode, current: String(name).replace(/\s+/g, ' ').trim().slice(0, 40) };
+    };
+    function isArrow(key) { return key === 'up' || key === 'down' || key === 'left' || key === 'right'; }
+    // Appui complet (pointeur puis clic) : certains menus du lecteur s'ouvrent à
+    // l'appui du pointeur et ignorent un simple click().
+    function press() {
+      var node = resolveCurrent();
+      if (!node) return false;
+      var r = node.getBoundingClientRect();
+      var base = { bubbles: true, cancelable: true, view: window, button: 0, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+      var pointer = { pointerId: 1, pointerType: 'mouse', isPrimary: true };
+      try {
+        var down = Object.assign({ buttons: 1 }, base);
+        var up = Object.assign({ buttons: 0 }, base);
+        if (typeof PointerEvent === 'function') node.dispatchEvent(new PointerEvent('pointerdown', Object.assign({}, down, pointer)));
+        node.dispatchEvent(new MouseEvent('mousedown', down));
+        if (typeof PointerEvent === 'function') node.dispatchEvent(new PointerEvent('pointerup', Object.assign({}, up, pointer)));
+        node.dispatchEvent(new MouseEvent('mouseup', up));
+      } catch (e) { /* navigateur ancien : le clic seul */ }
+      node.click();
+      // La page peut changer (menu ouvert, autre source) : le cadre suit.
+      setTimeout(function () { wakeControls(); drawFrame(); }, 300);
+      return true;
+    }
+    // Retourne 'no-video' quand la page n'a pas de vidéo à elle : l'appelant
+    // essaie alors les iframes des lecteurs externes, puis __mewflixTvFallback.
     window.__mewflixTvKey = function (key) {
-      if (key === 'back' || key === 'home') { leave(); return 'left'; }
+      if (key === 'home') { leave(); return 'left'; }
+      if (navMode) {
+        if (key === 'back' || key === 'menu') { exitNav(); return 'done'; }
+        if (isArrow(key)) { moveFocus(key); return 'done'; }
+        if (key === 'ok') { if (!press()) exitNav(); return 'done'; }
+      }
+      if (key === 'back') { leave(); return 'left'; }
+      if (key === 'up' || key === 'down' || key === 'menu') { enterNav(key === 'menu' ? 'up' : key); return 'done'; }
       var label = controlVideo ? controlVideo(document, key) : '';
       if (!label) return 'no-video';
       showHud(label);
       return 'done';
     };
+    // Ni vidéo dans la page ni lecteur externe qui réponde (écran d'erreur ou de
+    // choix du site) : les flèches circulent entre les boutons.
     window.__mewflixTvFallback = function (key) {
-      if (key === 'up' || key === 'down' || key === 'left' || key === 'right') { moveFocus(key); return 'moved'; }
-      var active = document.activeElement;
-      if (key === 'ok' && active && active !== document.body && active.tagName !== 'IFRAME') { active.click(); return 'clicked'; }
+      if (isArrow(key)) {
+        if (!navMode) enterNav(key);
+        else moveFocus(key);
+        return 'moved';
+      }
+      if (key === 'ok' && press()) return 'clicked';
       return 'none';
     };
     window.__mewflixTvNav = function (screen) {
@@ -121,12 +277,14 @@
           || (event.key === 'Escape' && !document.fullscreenElement && !document.querySelector('[role="dialog"]'))) {
         event.preventDefault();
         event.stopImmediatePropagation();
-        leave();
+        if (navMode) exitNav();
+        else leave();
       }
     }, true);
     // Le site est une application à page unique : s'il quitte la lecture par
     // sa propre navigation, on revient à l'interface TV.
     setInterval(function () { if (!isWatchPath()) location.replace(HOME); }, 700);
+    setTimeout(function () { if (!navMode) showHud('↑ ↓ : boutons du lecteur · ← → : reculer / avancer'); }, 4000);
   }
 
   if (isWatchPath()) { playerMode(); return; }

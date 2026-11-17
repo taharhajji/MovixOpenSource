@@ -316,10 +316,10 @@ test('controlVideo : volume borné, coupure du son', () => {
   const doc = docWith(video);
   assert.equal(controlVideo(doc, 'volup'), 'Volume 100 %');
   assert.equal(video.muted, false, 'monter le son le rétablit');
-  assert.equal(controlVideo(doc, 'up'), 'Volume 100 %');
+  assert.equal(controlVideo(doc, 'up'), '', 'haut ne touche plus au volume');
   video.volume = 0.1;
   assert.equal(controlVideo(doc, 'voldown'), 'Volume 0 %');
-  assert.equal(controlVideo(doc, 'down'), 'Volume 0 %');
+  assert.equal(controlVideo(doc, 'down'), '', 'bas ne touche plus au volume');
   assert.equal(controlVideo(doc, 'mute'), 'Son coupé');
   assert.equal(controlVideo(doc, 'mute'), 'Son rétabli');
 });
