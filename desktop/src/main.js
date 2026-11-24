@@ -918,6 +918,11 @@ function bootstrap() {
       const wc = tvContents(event.sender);
       return Boolean(wc && event.senderFrame === wc.mainFrame);
     };
+    // Photo de profil MEWFLIX (drapeaux) : cadre principal de la fenêtre principale uniquement.
+    const fromMainPage = (event) => Boolean(mainWindow && !mainWindow.isDestroyed()
+      && event.sender === mainWindow.webContents && event.senderFrame === mainWindow.webContents.mainFrame);
+    ipcMain.handle('profile:flags', (event) => (fromMainPage(event) ? require('./lib/flags').listFlags() : []));
+    ipcMain.handle('profile:flag', (event, code) => (fromMainPage(event) ? require('./lib/flags').flagSvg(String(code)) : ''));
     ipcMain.handle('tv:info', async (event) => {
       if (!fromTvPage(event)) return {};
       const info = await remoteInfo();

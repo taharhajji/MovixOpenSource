@@ -821,6 +821,11 @@ function buildLocalProfile(storagePrefix, accent) {
     var KEY = ${JSON.stringify(String(storagePrefix) + ':pseudo')};
     var ACCENT_COLOR = ${JSON.stringify(String(accent))};
     var MAX_LENGTH = 24;
+    // Photo de profil : un drapeau (code pays), fourni par l'app (lib/flags.js).
+    var AVATAR_KEY = ${JSON.stringify(String(storagePrefix) + ':avatar')};
+    var FLAG_CODE = /^(?:[a-z]{2}|gb-(?:eng|sct|wls|nir))$/;
+    var flagCache = {};
+    var allFlags = null;
     var CSS = [
       '[data-profile-trigger] { display: none !important; }',
       '#mewflix-profile { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px 0 4px; border-radius: 999px; border: 1px solid rgba(255,255,255,.12); background: transparent; color: rgba(255,255,255,.88); font: 600 14px system-ui, sans-serif; cursor: pointer; flex-shrink: 0; }',
@@ -841,6 +846,15 @@ function buildLocalProfile(storagePrefix, accent) {
       '#mewflix-profile-panel .mp-save { border: 0; background: ' + ACCENT_COLOR + '; color: #1a2030; }',
       '#mewflix-profile-panel .mp-settings { border: 1px solid rgba(255,255,255,.16); background: transparent; color: #e9eef6; }',
       '#mewflix-profile-panel .mp-done { margin-top: 8px; min-height: 18px; font-size: 12px; color: ' + ACCENT_COLOR + '; }',
+      '#mewflix-profile .mp-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }',
+      '#mewflix-profile-panel { max-height: calc(100vh - 90px); overflow-y: auto; }',
+      '#mewflix-profile-panel .mp-photo-label { margin-top: 16px; }',
+      '#mewflix-profile-panel .mp-flags { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; max-height: 216px; overflow-y: auto; margin-top: 8px; padding: 3px; }',
+      '#mewflix-profile-panel .mp-flag { flex: none; width: 100%; height: auto; aspect-ratio: 1; padding: 0; border-radius: 50%; border: 2px solid transparent; background: #0f1013; overflow: hidden; color: #e9eef6; font-size: 10px; font-weight: 600; }',
+      '#mewflix-profile-panel .mp-flag img { width: 100%; height: 100%; display: block; border-radius: 50%; }',
+      '#mewflix-profile-panel .mp-flag:hover { border-color: rgba(255,255,255,.35); }',
+      '#mewflix-profile-panel .mp-flag[aria-pressed="true"] { border-color: ' + ACCENT_COLOR + '; box-shadow: 0 0 0 2px ' + ACCENT_COLOR + '; }',
+      '#mewflix-profile-panel .mp-empty { grid-column: 1 / -1; color: rgba(233,238,246,.6); font-size: 13px; }',
     ].join('\\n');
 
     function clean(value) {
@@ -855,6 +869,65 @@ function buildLocalProfile(storagePrefix, accent) {
         else localStorage.removeItem(KEY);
         return true;
       } catch (e) { return false; }
+    }
+    function readAvatar() {
+      try {
+        var value = String(localStorage.getItem(AVATAR_KEY) || '');
+        return FLAG_CODE.test(value) ? value : '';
+      } catch (e) { return ''; }
+    }
+    function writeAvatar(code) {
+      try {
+        if (code) localStorage.setItem(AVATAR_KEY, code);
+        else localStorage.removeItem(AVATAR_KEY);
+        return true;
+      } catch (e) { return false; }
+    }
+    function flagSrc(svg) {
+      return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(String(svg || ''));
+    }
+    var SPECIAL_NAMES = { 'gb-eng': 'Angleterre', 'gb-sct': 'Écosse', 'gb-wls': 'Pays de Galles', 'gb-nir': 'Irlande du Nord', eu: 'Union européenne', un: 'Nations unies' };
+    var regionNames = null;
+    try { regionNames = new Intl.DisplayNames(['fr'], { type: 'region' }); } catch (e) { /* navigateur ancien */ }
+    function flagName(code) {
+      if (SPECIAL_NAMES[code]) return SPECIAL_NAMES[code];
+      try {
+        var name = regionNames && regionNames.of(code.toUpperCase());
+        if (name && name !== code.toUpperCase()) return name;
+      } catch (e) { /* code inconnu */ }
+      return code.toUpperCase();
+    }
+    function simplify(text) {
+      return String(text || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase();
+    }
+    function desktopBridge() {
+      var bridge = window.__movixDesktop;
+      return bridge && typeof bridge.profileFlag === 'function' && typeof bridge.profileFlags === 'function' ? bridge : null;
+    }
+    function loadFlag(code) {
+      if (!code) return Promise.resolve('');
+      if (flagCache[code]) return Promise.resolve(flagCache[code]);
+      var bridge = desktopBridge();
+      if (!bridge) return Promise.resolve('');
+      return bridge.profileFlag(code).then(function(svg) {
+        if (svg) flagCache[code] = flagSrc(svg);
+        return flagCache[code] || '';
+      }, function() { return ''; });
+    }
+    function loadAllFlags() {
+      if (allFlags) return Promise.resolve(allFlags);
+      var bridge = desktopBridge();
+      if (!bridge) return Promise.resolve([]);
+      return bridge.profileFlags().then(function(list) {
+        allFlags = (Array.isArray(list) ? list : []).filter(function(flag) {
+          return flag && FLAG_CODE.test(String(flag.code));
+        }).map(function(flag) {
+          var code = String(flag.code);
+          flagCache[code] = flagSrc(flag.svg);
+          return { code: code, src: flagCache[code], name: flagName(code) };
+        }).sort(function(a, b) { return a.name.localeCompare(b.name, 'fr'); });
+        return allFlags;
+      }, function() { return []; });
     }
     function go(path) {
       if (location.pathname === path) return;
@@ -882,8 +955,20 @@ function buildLocalProfile(storagePrefix, accent) {
       var avatar = button.querySelector('.mp-avatar');
       var name = button.querySelector('.mp-name');
       avatar.textContent = pseudo ? pseudo.charAt(0).toUpperCase() : '?';
+      avatar.style.background = '';
       name.textContent = pseudo || 'Profil';
       button.setAttribute('aria-label', pseudo ? 'Profil de ' + pseudo : 'Choisir un pseudo');
+      var code = readAvatar();
+      if (!code) return;
+      loadFlag(code).then(function(src) {
+        if (!src || readAvatar() !== code || !avatar.isConnected) return;
+        avatar.textContent = '';
+        var img = document.createElement('img');
+        img.alt = '';
+        img.src = src;
+        avatar.appendChild(img);
+        avatar.style.background = 'transparent';
+      });
     }
     function openPanel(button) {
       closePanel();
@@ -935,7 +1020,72 @@ function buildLocalProfile(storagePrefix, accent) {
       });
       row.appendChild(save);
       row.appendChild(settings);
-      [title, hint, label, input, row, done].forEach(function(node) { panel.appendChild(node); });
+      var photoLabel = document.createElement('label');
+      photoLabel.className = 'mp-photo-label';
+      photoLabel.setAttribute('for', 'mewflix-flag-search');
+      photoLabel.textContent = 'Photo de profil';
+      var search = document.createElement('input');
+      search.id = 'mewflix-flag-search';
+      search.type = 'search';
+      search.placeholder = 'Chercher un pays';
+      search.autocomplete = 'off';
+      var grid = document.createElement('div');
+      grid.className = 'mp-flags';
+      function flagButton(code, labelText, src) {
+        var item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'mp-flag';
+        item.title = labelText;
+        item.setAttribute('aria-label', labelText);
+        item.setAttribute('aria-pressed', String(readAvatar() === code));
+        if (src) {
+          var img = document.createElement('img');
+          img.alt = '';
+          img.loading = 'lazy';
+          img.src = src;
+          item.appendChild(img);
+        } else {
+          item.textContent = labelText;
+        }
+        item.addEventListener('click', function() {
+          writeAvatar(code);
+          render(button);
+          Array.prototype.forEach.call(grid.querySelectorAll('.mp-flag'), function(other) {
+            other.setAttribute('aria-pressed', String(other === item));
+          });
+          done.textContent = code ? 'Photo : ' + labelText + '.' : 'Photo retirée.';
+        });
+        return item;
+      }
+      function fill() {
+        var query = simplify(search.value.trim());
+        grid.textContent = '';
+        if (!query) grid.appendChild(flagButton('', 'Aucune', ''));
+        var shown = 0;
+        (allFlags || []).forEach(function(flag) {
+          if (query && simplify(flag.name).indexOf(query) < 0 && flag.code !== query) return;
+          grid.appendChild(flagButton(flag.code, flag.name, flag.src));
+          shown += 1;
+        });
+        if (query && !shown) {
+          var empty = document.createElement('div');
+          empty.className = 'mp-empty';
+          empty.textContent = 'Aucun pays ne correspond.';
+          grid.appendChild(empty);
+        }
+      }
+      search.addEventListener('input', fill);
+      loadAllFlags().then(function(list) {
+        if (!panel) return;
+        if (!list.length) {
+          photoLabel.remove();
+          search.remove();
+          grid.remove();
+          return;
+        }
+        fill();
+      });
+      [title, hint, label, input, row, photoLabel, search, grid, done].forEach(function(node) { panel.appendChild(node); });
       var rect = button.getBoundingClientRect();
       panel.style.top = Math.round(rect.bottom + 8) + 'px';
       document.body.appendChild(panel);

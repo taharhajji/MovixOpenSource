@@ -50,6 +50,9 @@ if (onSite || onLocalPage) {
 if (onSite) {
   api.gmFetch = (message) => ipcRenderer.invoke('gm:fetch', message);
   api.gmAbort = (id) => ipcRenderer.invoke('gm:abort', String(id));
+  // Photo de profil MEWFLIX : drapeaux du monde fournis par l'app (lib/flags.js).
+  api.profileFlags = () => ipcRenderer.invoke('profile:flags');
+  api.profileFlag = (code) => ipcRenderer.invoke('profile:flag', String(code));
   // Mode TV : l'interface injectée (src/injection/tv-app.js) lit l'adresse de
   // la télécommande et pilote la sortie du mode. Exposé seulement s'il est actif.
   if (ipcRenderer.sendSync('tv:enabled') === true) {
