@@ -395,7 +395,9 @@ function buildCommunityLinksHiding() {
   // par le navigateur lui-même (CSS), donc valables après chaque re-rendu.
   (function hideCommunityLinks() {
     var CSS = [
-      'a[href*="t.me/"], a[href*="telegram"], a[href*="github.com"], a[href*="movix.online"] { display: none !important; }',
+      'a[href*="t.me/"], a[href*="telegram"], a[href*="github.com"], a[href*="movix.online"], a[href*="matrix.to"] { display: none !important; }',
+      // Bloc « Rejoignez la communauté » (Matrix) : carte entière, pas seulement le bouton.
+      'div:has(> div.grid a[href*="matrix.to"]), li:has(> a[href*="matrix.to"]) { display: none !important; }',
       'li:has(> a[href*="t.me/"]), li:has(> a[href*="telegram"]), li:has(> a[href*="github.com"]), li:has(> a[href*="movix.online"]) { display: none !important; }',
       'footer nav > div:has(a[href*="t.me/"]) { display: none !important; }',
       'section[aria-labelledby="footer-technologies"] { display: none !important; }',
@@ -809,6 +811,197 @@ function buildMediaRelay(relayPath, hosts) {
 `;
 }
 
+function buildLocalProfile(storagePrefix, accent) {
+  return `
+  // --- Profil MEWFLIX (pseudo local) à la place de la connexion du site -------------
+  // Le bouton « Connexion » du site (Discord, Google, phrase secrète, parrainage)
+  // est masqué et remplacé par un profil propre à l'app : un pseudo gardé sur
+  // cet appareil, sans compte ni serveur, et l'accès aux Paramètres du site.
+  (function localProfile() {
+    var KEY = ${JSON.stringify(String(storagePrefix) + ':pseudo')};
+    var ACCENT_COLOR = ${JSON.stringify(String(accent))};
+    var MAX_LENGTH = 24;
+    var CSS = [
+      '[data-profile-trigger] { display: none !important; }',
+      '#mewflix-profile { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px 0 4px; border-radius: 999px; border: 1px solid rgba(255,255,255,.12); background: transparent; color: rgba(255,255,255,.88); font: 600 14px system-ui, sans-serif; cursor: pointer; flex-shrink: 0; }',
+      '#mewflix-profile:hover, #mewflix-profile[aria-expanded="true"] { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.22); color: #fff; }',
+      '#mewflix-profile .mp-avatar { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: ' + ACCENT_COLOR + '; color: #1a2030; font-weight: 800; font-size: 14px; }',
+      // Largeur bornée : la barre du site réserve une place fixe à ce bouton
+      // (au-delà, la pastille passe sur la loupe de recherche).
+      '#mewflix-profile .mp-name { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
+      '@media (max-width: 640px) { #mewflix-profile { padding: 0 4px; } #mewflix-profile .mp-name { display: none; } }',
+      '#mewflix-profile-panel { position: fixed; z-index: 2147483000; top: 64px; right: 16px; width: min(320px, calc(100vw - 32px)); padding: 16px; border-radius: 14px; background: #16181d; border: 1px solid rgba(255,255,255,.1); box-shadow: 0 18px 50px rgba(0,0,0,.55); color: #e9eef6; font: 14px/1.45 system-ui, sans-serif; }',
+      '#mewflix-profile-panel h2 { margin: 0 0 4px; font-size: 16px; font-weight: 700; color: #fff; }',
+      '#mewflix-profile-panel p { margin: 0 0 12px; color: rgba(233,238,246,.6); font-size: 13px; }',
+      '#mewflix-profile-panel label { display: block; margin-bottom: 6px; font-size: 13px; color: rgba(233,238,246,.8); }',
+      '#mewflix-profile-panel input { width: 100%; box-sizing: border-box; height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,.16); background: #0f1013; color: #fff; font: inherit; outline: none; }',
+      '#mewflix-profile-panel input:focus { border-color: ' + ACCENT_COLOR + '; }',
+      '#mewflix-profile-panel .mp-row { display: flex; gap: 8px; margin-top: 12px; }',
+      '#mewflix-profile-panel button, #mewflix-profile-panel a { flex: 1; display: inline-flex; align-items: center; justify-content: center; height: 38px; border-radius: 10px; font: 600 14px system-ui, sans-serif; text-decoration: none; cursor: pointer; }',
+      '#mewflix-profile-panel .mp-save { border: 0; background: ' + ACCENT_COLOR + '; color: #1a2030; }',
+      '#mewflix-profile-panel .mp-settings { border: 1px solid rgba(255,255,255,.16); background: transparent; color: #e9eef6; }',
+      '#mewflix-profile-panel .mp-done { margin-top: 8px; min-height: 18px; font-size: 12px; color: ' + ACCENT_COLOR + '; }',
+    ].join('\\n');
+
+    function clean(value) {
+      return String(value || '').replace(/[\\u0000-\\u001f\\u007f<>]/g, '').replace(/\\s+/g, ' ').trim().slice(0, MAX_LENGTH);
+    }
+    function readPseudo() {
+      try { return clean(localStorage.getItem(KEY)); } catch (e) { return ''; }
+    }
+    function writePseudo(value) {
+      try {
+        if (value) localStorage.setItem(KEY, value);
+        else localStorage.removeItem(KEY);
+        return true;
+      } catch (e) { return false; }
+    }
+    function go(path) {
+      if (location.pathname === path) return;
+      history.pushState({}, '', path);
+      window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
+    }
+    function addStyle() {
+      if (document.getElementById('mewflix-profile-style')) return;
+      var parent = document.head || document.documentElement;
+      if (!parent) return;
+      var style = document.createElement('style');
+      style.id = 'mewflix-profile-style';
+      style.textContent = CSS;
+      parent.appendChild(style);
+    }
+
+    var panel = null;
+    function closePanel() {
+      if (panel) { panel.remove(); panel = null; }
+      var button = document.getElementById('mewflix-profile');
+      if (button) button.setAttribute('aria-expanded', 'false');
+    }
+    function render(button) {
+      var pseudo = readPseudo();
+      var avatar = button.querySelector('.mp-avatar');
+      var name = button.querySelector('.mp-name');
+      avatar.textContent = pseudo ? pseudo.charAt(0).toUpperCase() : '?';
+      name.textContent = pseudo || 'Profil';
+      button.setAttribute('aria-label', pseudo ? 'Profil de ' + pseudo : 'Choisir un pseudo');
+    }
+    function openPanel(button) {
+      closePanel();
+      panel = document.createElement('div');
+      panel.id = 'mewflix-profile-panel';
+      panel.setAttribute('role', 'dialog');
+      panel.setAttribute('aria-label', 'Profil MEWFLIX');
+      var title = document.createElement('h2');
+      title.textContent = 'Ton profil MEWFLIX';
+      var hint = document.createElement('p');
+      hint.textContent = 'Pas de compte à créer : ton pseudo reste sur cet appareil.';
+      var label = document.createElement('label');
+      label.setAttribute('for', 'mewflix-pseudo');
+      label.textContent = 'Pseudo';
+      var input = document.createElement('input');
+      input.id = 'mewflix-pseudo';
+      input.type = 'text';
+      input.maxLength = MAX_LENGTH;
+      input.autocomplete = 'nickname';
+      input.placeholder = 'Ex. : CinéphileDu13';
+      input.value = readPseudo();
+      var done = document.createElement('div');
+      done.className = 'mp-done';
+      var row = document.createElement('div');
+      row.className = 'mp-row';
+      var save = document.createElement('button');
+      save.type = 'button';
+      save.className = 'mp-save';
+      save.textContent = 'Enregistrer';
+      var settings = document.createElement('a');
+      settings.href = '/settings';
+      settings.className = 'mp-settings';
+      settings.textContent = 'Paramètres';
+      function commit() {
+        var value = clean(input.value);
+        input.value = value;
+        done.textContent = writePseudo(value) ? (value ? 'Pseudo enregistré.' : 'Pseudo effacé.') : 'Impossible d\\u2019enregistrer sur cet appareil.';
+        render(button);
+      }
+      save.addEventListener('click', commit);
+      input.addEventListener('keydown', function(event) {
+        if (event.key === 'Enter') { event.preventDefault(); commit(); }
+      });
+      settings.addEventListener('click', function(event) {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button === 1) return;
+        event.preventDefault();
+        closePanel();
+        go('/settings');
+      });
+      row.appendChild(save);
+      row.appendChild(settings);
+      [title, hint, label, input, row, done].forEach(function(node) { panel.appendChild(node); });
+      var rect = button.getBoundingClientRect();
+      panel.style.top = Math.round(rect.bottom + 8) + 'px';
+      document.body.appendChild(panel);
+      button.setAttribute('aria-expanded', 'true');
+      setTimeout(function() { input.focus(); input.select(); }, 0);
+    }
+    function makeButton() {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.id = 'mewflix-profile';
+      button.setAttribute('aria-haspopup', 'dialog');
+      button.setAttribute('aria-expanded', 'false');
+      var avatar = document.createElement('span');
+      avatar.className = 'mp-avatar';
+      avatar.setAttribute('aria-hidden', 'true');
+      var name = document.createElement('span');
+      name.className = 'mp-name';
+      button.appendChild(avatar);
+      button.appendChild(name);
+      button.addEventListener('click', function(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (panel) closePanel();
+        else openPanel(button);
+      });
+      render(button);
+      return button;
+    }
+    function place() {
+      addStyle();
+      var trigger = document.querySelector('[data-profile-trigger]');
+      if (!trigger || !trigger.parentNode) return;
+      var mine = document.getElementById('mewflix-profile');
+      if (mine && mine.previousElementSibling === trigger) return;
+      if (mine) mine.remove();
+      trigger.parentNode.insertBefore(makeButton(), trigger.nextSibling);
+    }
+    // Page de création de compte du site : renvoyée à l'accueil.
+    function guardRoutes() {
+      if (location.pathname === '/create-account') location.replace('/');
+    }
+    document.addEventListener('click', function(event) {
+      if (!panel) return;
+      var target = event.target;
+      if (panel.contains(target)) return;
+      var button = document.getElementById('mewflix-profile');
+      if (button && button.contains(target)) return;
+      closePanel();
+    }, true);
+    document.addEventListener('keydown', function(event) {
+      if (panel && event.key === 'Escape') closePanel();
+    }, true);
+    var pending = false;
+    function schedule() { if (pending) return; pending = true; setTimeout(function() { pending = false; place(); guardRoutes(); }, 60); }
+    var start = function() {
+      guardRoutes();
+      place();
+      new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
+      window.addEventListener('popstate', function() { closePanel(); schedule(); });
+    };
+    if (document.body) start();
+    else document.addEventListener('DOMContentLoaded', start, { once: true });
+  })();
+`;
+}
+
 function buildHeroPromoBlock() {
   return `
   // --- Promos maison du carrousel d'accueil ------------------------------------------
@@ -864,6 +1057,7 @@ function buildHeroPromoBlock() {
  *   désactivés dans l'ordre de priorité et masqués du panneau (version web)
  * @param {{path: string, hosts: string[]}|null} [options.mediaRelay]  relais /media du site web
  *   pour les hôtes HLS qui refusent l'Origin du site (null = aucun)
+ * @param {boolean} [options.localProfile]  profil MEWFLIX (pseudo local) à la place de la connexion du site
  * @param {boolean} [options.blockHeroPromos]  retire les diapos « publicité » du carrousel d'accueil
  * @returns {string} code JS à exécuter dans la page avant ses scripts
  */
@@ -884,6 +1078,7 @@ function buildSiteTweaks({
   disableEmbedSources = false,
   themeCss = '',
   blockHeroPromos = true,
+  localProfile = false,
   sandboxExemptHosts = ['challenges.cloudflare.com', 'youtube.com', 'youtube-nocookie.com', 'player.vimeo.com', 'accounts.google.com', 'discord.com'],
 } = {}) {
   const parts = [];
@@ -898,6 +1093,7 @@ function buildSiteTweaks({
   if (hideSiteBranding) parts.push(buildHideBranding(brandIconUrl));
   if (navShortcut && navShortcut.href) parts.push(buildNavShortcut(navShortcut));
   if (hideCommunityLinks) parts.push(buildCommunityLinksHiding());
+  if (localProfile) parts.push(buildLocalProfile(storagePrefix, accent));
   // Toujours inclus quand une expression est fournie, y compris 'false' : le
   // bloc restaure alors le réglage précédent s'il avait été forcé.
   if (adPopupAutoExpr != null) parts.push(buildAdPopupAuto(adPopupAutoExpr, storagePrefix));

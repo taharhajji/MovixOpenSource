@@ -31,6 +31,8 @@ function buildBridgeRuntime({ version, appName = 'MEWFLIX', accent = '#dbe6f6', 
     // refusent de lire (« Sandbox not allowed »), et Electron bloque déjà
     // nativement popups et navigations sortantes (navigationPolicy, main.js).
     sandboxEmbeds: false,
+    // Pas de compte du site dans l'app : profil MEWFLIX avec un pseudo local.
+    localProfile: true,
   });
   return `
 (function() {

@@ -165,3 +165,18 @@ test('promos du carrousel d\'accueil : liste vide, cache vidé, suivi des clics 
 test('promos du carrousel : désactivables', () => {
   assert.ok(!buildSiteTweaks({ appName: 'X', blockHeroPromos: false }).includes('hero_promos_cache'));
 });
+
+test('profil MEWFLIX : remplace la connexion du site, pseudo local nettoyé', () => {
+  const code = buildSiteTweaks({ appName: 'MEWFLIX', localProfile: true, storagePrefix: 'orbit_desktop' });
+  assert.doesNotThrow(() => new Function(code));
+  assert.ok(code.includes('[data-profile-trigger] { display: none !important; }'), 'bouton Connexion du site masqué');
+  assert.ok(code.includes('"orbit_desktop:pseudo"'), 'pseudo rangé sous le préfixe de l\'app');
+  assert.ok(code.includes("location.pathname === '/create-account'"), 'création de compte renvoyée à l\'accueil');
+  assert.ok(!buildSiteTweaks({ appName: 'X' }).includes('mewflix-profile'), 'désactivé par défaut');
+});
+
+test('liens communauté : Matrix masqué avec Telegram', () => {
+  const code = buildSiteTweaks({ appName: 'X', hideSiteBranding: true });
+  assert.ok(code.includes('a[href*="matrix.to"]'));
+  assert.ok(code.includes('div:has(> div.grid a[href*="matrix.to"])'));
+});
