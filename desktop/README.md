@@ -209,7 +209,18 @@ Canal : https://github.com/taharhajji/MovixOpenSource/releases (`build.publish` 
 `github`). Publier une version = `gh release create vX.Y.Z` avec, pour Windows,
 `MEWFLIX-Setup-X.Y.Z.exe`, son `.blockmap` et `latest.yml` (electron-updater télécharge et
 installe au redémarrage) ; pour macOS les zips + `latest-mac.yml` ; pour Linux les `.deb`
-(macOS et Linux : l'app propose seulement le téléchargement, faute de signature Apple / AppImage).
+(macOS et Linux : voir ci-dessous).
+
+**Depuis la 1.1.6, macOS et Linux se mettent à jour seuls** (`src/lib/selfUpdate.js`) : lecture de la dernière
+release, téléchargement du zip (selon le processeur) ou du `.deb` avec taille et SHA-256 (`digest` de l'API GitHub)
+vérifiés, puis installation au redémarrage ou à la fermeture :
+- macOS : script qui attend la fin de l'app, remplace `MEWFLIX.app` (ancienne version gardée tant que la copie n'a pas
+  réussi), retire la quarantaine (`xattr -cr`) et relance. App lancée hors d'Applications (translocation) : message
+  pour la déplacer.
+- Linux : `sudo -n apt-get install -y` (Chromebook : sudo sans mot de passe), puis relance ; sans sudo, le `.deb` est
+  ouvert dans l'installateur du système. Vérifié dans WSL Ubuntu : 1.1.4 → 1.1.5 téléchargée, vérifiée, installée.
+Toutes les plateformes vérifient toutes les 6 h (en plus du démarrage) et ne proposent chaque version qu'une fois.
+Les versions jusqu'à 1.1.5 sur macOS/Linux n'ont pas ce module : une dernière installation à la main est nécessaire.
 Vérifié le 10 nov. 2026 : une 1.0.1 a détecté et téléchargé une 1.0.2 de test toute seule.
 Builds macOS et Linux (WSL Ubuntu) : `scripts/build-mac-wsl.sh`, puis `scripts/sign-mac-wsl.sh` (signature ad hoc via rcodesign : sans elle macOS affiche « endommagé » au lieu du message d'app non vérifiée), puis `scripts/zip-mac-wsl.sh` ; `scripts/build-linux-wsl.sh` pour les .deb.
 

@@ -80,7 +80,11 @@ termine : `start` doit donc rester au premier plan.
 
 - **Publicités** : pas de mode strict comme sur le bureau. Les sources directes n'en ont pas ; un lecteur de secours
   (iframe d'un hébergeur) peut afficher les siennes. Redirections et fenêtres surgissantes sont bloquées.
-- **Mises à jour** : pas de mise à jour automatique ; il faut réinstaller l'APK par-dessus.
+- **Mises à jour (1.0.3)** : `AppUpdater` lit les releases GitHub au démarrage (+30 s) puis toutes les 12 h, télécharge
+  le dernier `tv-v*` (taille et SHA-256 du champ `digest` vérifiés) et propose « Installer » (PackageInstaller).
+  Première fois : la télé demande d'autoriser MEWFLIX comme source, puis l'appli repropose l'installation au retour.
+  Android 12+ : les mises à jour suivantes peuvent passer sans écran de confirmation. Les versions jusqu'à 1.0.2 n'ont
+  pas ce module : une dernière installation par Downloader (`is.gd/mewflixtv`) est nécessaire.
 - **Liste des miroirs** figée à celle de `desktop/src/lib/addressResolver.js` au moment du build (pas de lecture de la
   liste en ligne).
 - **Vérifié uniquement sur l'émulateur** Google TV (Android 16, 1080p) : jamais lancé sur une vraie télé.

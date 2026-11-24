@@ -97,6 +97,7 @@ public class MainActivity extends Activity {
     private boolean pageLoading = true;
     private long readySince;
     private final LocalProxy proxy = new LocalProxy();
+    private AppUpdater updater;
     /** Vrai dès que le serveur en cours a renvoyé une page : il n'est plus à remplacer. */
     private boolean mirrorConfirmed;
     /** Dernière cause d'échec, affichée sur l'écran « Connexion impossible ». */
@@ -132,6 +133,8 @@ public class MainActivity extends Activity {
         configureWebView(background);
         hideSystemBars();
         startNetwork();
+        updater = new AppUpdater(this);
+        updater.start();
     }
 
     /**
@@ -456,6 +459,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         handler.removeCallbacksAndMessages(null);
+        if (updater != null) updater.stop();
         gmBridge.shutdown();
         proxy.stop();
         root.removeView(web);

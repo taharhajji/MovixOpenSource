@@ -7,6 +7,12 @@
     <string name="offline_detail">Détail à transmettre si ça persiste : %1$s · version %2$s</string>
     <string name="slow_server">délai dépassé</string>
     <string name="bad_certificate">certificat refusé</string>
+    <string name="update_title">Mise à jour de MEWFLIX</string>
+    <string name="update_message">La version %1$s est prête. L\'installer maintenant ?\n\nL\'appli se fermera : rouvre-la ensuite depuis l\'écran d\'accueil.</string>
+    <string name="update_install">Installer</string>
+    <string name="update_later">Plus tard</string>
+    <string name="update_installing">Installation de la mise à jour…</string>
+    <string name="update_failed">La mise à jour n\'a pas pu s\'installer. Elle sera proposée à nouveau plus tard.</string>
 
     <color name="background">#0D0E11</color>
     <color name="text">#E7EDF7</color>

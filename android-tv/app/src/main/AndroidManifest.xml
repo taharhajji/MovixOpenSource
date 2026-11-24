@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Mise à jour par l'appli elle-même (AppUpdater) : installer une nouvelle version d'elle-même. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Télé : pas d'écran tactile ; installable aussi sur un téléphone ou un boîtier. -->
     <uses-feature android:name="android.software.leanback" android:required="false" />

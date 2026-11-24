@@ -1086,10 +1086,96 @@ function bootstrap() {
     }
   }
 
+  // macOS et Linux : téléchargement et installation par l'app elle-même
+  // (lib/selfUpdate.js), au redémarrage ou à la fermeture.
+  const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+  let selfUpdater = null;
+  let selfInstallOnQuit = false;
+  let selfInstalling = false;
+  let offeredVersion = '';
+
+  async function applySelfUpdate(restart) {
+    selfInstalling = true;
+    const result = await selfUpdater.install();
+    if (result.ok) {
+      if (restart && result.relaunch === 'restart') app.relaunch();
+      app.quit();
+      return;
+    }
+    selfInstalling = false;
+    console.warn('[movix] mise à jour : installation impossible :', result.reason);
+    if (result.reason === 'no-sudo' && result.file) {
+      shell.openPath(result.file);
+      return;
+    }
+    const translocated = result.reason === 'translocated';
+    const { response } = await dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      title: 'Mise à jour',
+      message: translocated
+        ? `Pour les mises à jour automatiques, glisse ${APP_NAME} dans le dossier Applications.`
+        : 'La mise à jour n’a pas pu s’installer toute seule.',
+      detail: translocated ? '' : `${result.reason}. Tu peux la télécharger à la main.`,
+      buttons: ['Télécharger', 'Fermer'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response === 0) shell.openExternal(RELEASES_PAGE);
+  }
+
+  async function offerSelfUpdate(version) {
+    if (offeredVersion === version) return;
+    offeredVersion = version;
+    const { response } = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      title: 'Mise à jour prête',
+      message: `${APP_NAME} ${version} est téléchargé.`,
+      detail: 'Redémarrer maintenant pour l’installer ? Sinon elle s’installera à la fermeture.',
+      buttons: ['Redémarrer', 'Plus tard'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response === 0) applySelfUpdate(true);
+    else selfInstallOnQuit = true;
+  }
+
+  async function checkSelfUpdate(interactive) {
+    const state = await selfUpdater.check();
+    if (state.status === 'ready') {
+      if (interactive) offeredVersion = '';
+      offerSelfUpdate(state.version);
+    } else if (state.status === 'none') {
+      if (interactive) {
+        dialog.showMessageBox(mainWindow, {
+          type: 'info', title: 'Mises à jour', message: `${APP_NAME} ${app.getVersion()} est à jour.`, buttons: ['OK'],
+        }).catch(() => {});
+      }
+    } else if (interactive || offeredVersion !== state.version) {
+      // Pas de fichier pour ce système ou échec : ancienne méthode (page de
+      // téléchargement), proposée une fois par version.
+      offeredVersion = state.version;
+      checkReleasesPage(interactive);
+    }
+  }
+
   function initAutoUpdate() {
     if (!app.isPackaged) return;
+    setInterval(() => checkForUpdates(false), UPDATE_CHECK_INTERVAL_MS);
     if (process.platform !== 'win32') {
-      checkReleasesPage(false);
+      selfUpdater = require('./lib/selfUpdate').createSelfUpdater({
+        app,
+        fetchImpl: (url, init) => require('electron').net.fetch(url, init),
+        releasesApi: RELEASES_API,
+        isNewer: isNewerVersion,
+        log: (msg) => console.log(`[movix] mise à jour : ${msg}`),
+      });
+      app.on('before-quit', (event) => {
+        if (!selfInstallOnQuit || selfInstalling) return;
+        event.preventDefault();
+        selfInstallOnQuit = false;
+        applySelfUpdate(false);
+      });
+      checkSelfUpdate(false);
       return;
     }
     try {
@@ -1104,6 +1190,9 @@ function bootstrap() {
     autoUpdater.on('update-available', (info) => console.log(`[movix] mise à jour : ${info.version} disponible, téléchargement…`));
     autoUpdater.on('update-not-available', () => console.log(`[movix] mise à jour : ${app.getVersion()} est à jour`));
     autoUpdater.on('update-downloaded', (info) => {
+      // Vérification toutes les 6 h : la même version n'est proposée qu'une fois.
+      if (offeredVersion === info.version) return;
+      offeredVersion = info.version;
       dialog.showMessageBox(mainWindow, {
         type: 'question',
         title: 'Mise à jour prête',
@@ -1120,7 +1209,10 @@ function bootstrap() {
   }
 
   function checkForUpdates(interactive) {
-    if (process.platform !== 'win32' && app.isPackaged) return checkReleasesPage(interactive);
+    if (process.platform !== 'win32' && app.isPackaged) {
+      if (selfUpdater) return checkSelfUpdate(interactive);
+      return checkReleasesPage(interactive);
+    }
     if (!autoUpdater) {
       if (interactive) {
         dialog.showMessageBox(mainWindow, {
